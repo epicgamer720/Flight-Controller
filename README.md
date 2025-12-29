@@ -7,12 +7,13 @@ Flight controller for rockets
 ## components
 
 STM32F722RET6 microcontroller 
-ICM-45686 IMU 
-BMP580 barometer 
-MicroSD card 
-Dual servo outputs 
-2-cell LiPo support with  BQ25883 charger
-USB-C connectivity 
+
+-ICM-45686 IMU 
+-BMP580 barometer 
+-MicroSD card 
+-Dual servo outputs 
+-2-cell LiPo support with  BQ25883 charger
+-USB-C connectivity 
 
 
 ## This project uses:
