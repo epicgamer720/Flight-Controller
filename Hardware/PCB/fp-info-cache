@@ -1,4 +1,18 @@
-26659346651744151
+26670029721953980
+2464
+BAT_2464
+
+
+0
+2
+2
+AO3400A
+SOT95P280X125-3N
+
+
+0
+3
+3
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -10,6 +24,13 @@ Audio_Module
 Reverb_BTDR-1V
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
 audio belton reverb
+0
+7
+7
+BM05B-GHS-TBT_LF__SN__N_
+JST_BM05B-GHS-TBT_LF__SN__N_
+
+
 0
 7
 7
@@ -2169,6 +2190,13 @@ switch DPDT
 0
 10
 6
+Button_Switch_THT
+SW_EG1218
+
+
+0
+3
+3
 Button_Switch_THT
 SW_Lever_1P2T_NKK_GW12LxH
 Switch, single pole double throw, right angle, http://www.nkkswitches.com/pdf/GW.pdf
@@ -106252,6 +106280,20 @@ Varistor VF
 0
 2
 2
+WS2812B2020
+LED_WS2812B2020
+
+
+0
+4
+4
+footprints
+SW4_1825910-B_TEC
+
+1825910-6 
+0
+4
+4
 lib
 CRYSTAL-SMD_4P-L3.2-W2.5-BL
 
