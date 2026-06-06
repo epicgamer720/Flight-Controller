@@ -2,8 +2,7 @@
 
 A custom, open-source flight computer for model and high-power rockets — STM32F722 (Cortex-M7) with onboard IMU, barometer, GPS, dual pyro channels, quad servo outputs, and microSD logging. Designed from scratch in KiCad.
 
-<!-- Replace with your board render. Drop the image in docs/ and update the path. -->
-![Flight controller board render](docs/board-render.png)
+
 
 ## Why I built it
 
