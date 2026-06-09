@@ -17,7 +17,7 @@ TF-01A,MicroSD card socket (push-pull or hinged),1,$1.50,$1.50,Link,LCSC,LCSC-st
 LED,"Generic indicator LED 0603 (e.g., power indicator)",1,$0.10,$0.10,Link,Digikey,
 WS2812B-2020,"Addressable RGB status LED, single-wire (KMK-style)",1,$0.30,$0.30,Link,LCSC,Cheaper on LCSC than Digikey
 PRTR5V0U2X,Dual-line TVS ESD protection for GPS UART,1,$0.35,$0.35,Link,Digikey,"Nexperia, SOT-143B"
-Screw_Terminal_01x02,2-pin screw terminal — pyro outputs and battery,3,$1.20,$3.60,Link,Digikey,Phoenix Contact MPT 0.5/2-2.54 or RIA EK500V-2.54. You'll need MORE — 4 pyros + battery = 5 minimum
+Screw_Terminal_01x02,2-pin screw terminal — pyro outputs and battery,3,$1.20,$3.60,Link,Digikey,
 BM05B-GHS-TBT_LF__SN__N_,"JST-GH 5-pin top-entry connector (GPS, Pixhawk standard)",1,$0.55,$0.55,Link,Digikey,JST part #BM05B-GHS-TBT(LF)(SN)(N)
 FCM1608KF-601T03,"Ferrite bead 600Ω @ 100MHz, 0603 — analog supply filter",1,$0.10,$0.10,Link,Digikey,Taiyo Yuden
 DFE252012F-1R0M=P2,"Power inductor 1.0µH, 2520 case — buck output (LMR51430?)",1,$0.40,$0.40,Link,Digikey,"Toko/Murata, ~3.6A saturation"
