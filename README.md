@@ -86,7 +86,6 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 | TYPE-C 16PIN 2MD(073) | USB-C connector, 16-pin (USB 2.0 only) | 1 | $0.50 | $0.50 | Link | LCSC | LCSC-style part number. Alt: GCT USB4105-GF-A (Digikey) |
 | X322525MOB4SI | HSE crystal 25MHz, SMD 3225 | 1 | $0.60 | $0.60 | Link | LCSC | Yangxing. Alt: Abracon ABM8G-25.000MHZ |
 | Q13FC1350000400 | LSE crystal 32.768kHz (RTC) | 1 | $0.40 | $0.40 | Link | Digikey | Epson FC-135 |
-Flight_controller_BOM.xlsx - BOM.csv
 
 ## This project uses:
 
