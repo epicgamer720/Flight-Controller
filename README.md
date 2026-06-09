@@ -75,7 +75,7 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 | 22.1K Ohm | Precision feedback or current-set resistor | 1 | $0.05 | $0.05 | Link | Digikey | 1% precision |
 | 100K Ohm | More continuity dividers | 2 | $0.01 | $0.02 | Link | Digikey | |
 | 100 Ohm | Gate series resistors on pyro MOSFETs | 3 | $0.01 | $0.03 | Link | Digikey | |
-| Conn_01x03 | 3-pin header — likely servo/PWM outputs or programming | 4 | $0.30 | $1.20 | Link | Digikey | Confirm pitch (2.54mm standard) |
+| Conn_01x03 | 3-pin header — likely servo/PWM outputs or programming | 4 | $0.30 | $1.20 | Link | Digikey | (2.54mm standard) |
 | TS-1088-AR02016 | Tactile switch — boot/reset buttons | 2 | $0.20 | $0.40 | Link | Digikey | Cheap SMD tactile, also on LCSC |
 | STM32F722RETx | Main MCU — ARM Cortex-M7, 216MHz, 512KB flash | 1 | $10.50 | $10.50 | Link | Digikey/Mouser | Check stock — F7 series can be supply-constrained |
 | BQ25883RGER | Single-cell Li-ion charger w/ I2C, up to 2A | 1 | $3.80 | $3.80 | Link | Digikey | TI, QFN-24 |
