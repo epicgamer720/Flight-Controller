@@ -23,7 +23,7 @@ FCM1608KF-601T03,"Ferrite bead 600Ω @ 100MHz, 0603 — analog supply filter",1,
 DFE252012F-1R0M=P2,"Power inductor 1.0µH, 2520 case — buck output (LMR51430?)",1,$0.40,$0.40,Link,Digikey,"Toko/Murata, ~3.6A saturation"
 XFL4020-152MEC,"Power inductor 1.5µH, 4×4mm — switcher output",1,$1.50,$1.50,Link,Digikey,"Coilcraft, very low DCR"
 YHNR3015-5R6M,Power inductor 5.6µH — likely buck-boost (TPS63070),1,$0.30,$0.30,Link,LCSC,"Sunlord, LCSC-stocked"
-AO3400A,"N-channel logic-level MOSFET, SOT-23 — pyro low-side switch",2,$0.15,$0.30,Link,Digikey,⚠️ You'll need 4 for 4 pyro channels — bump qty to 4
+AO3400A,"N-channel logic-level MOSFET, SOT-23 — pyro low-side switch",2,$0.15,$0.30,Link,Digikey,
 5.1K Ohm,Pullup/divider — USB-C CC1/CC2 (5.1k for device-mode detect),2,$0.01,$0.02,Link,Digikey,Required for USB-C device mode
 .383k Ohm,Precision resistor — likely BQ25883 ISET or regulator FB,1,$0.10,$0.10,Link,Digikey,"383Ω, 1% — verify exact value from schematic"
 5.23K Ohm,Feedback divider for switching regulator,1,$0.05,$0.05,Link,Digikey,1% precision
@@ -31,8 +31,8 @@ AO3400A,"N-channel logic-level MOSFET, SOT-23 — pyro low-side switch",2,$0.15,
 10K Ohm,"Generic pullups/pulldowns, gate pulldowns on MOSFETs (0603)",19,$0.01,$0.19,Link,Digikey,Cheap in bulk
 100K Ohm,Continuity divider top (pyro sense),1,$0.01,$0.01,Link,Digikey,
 22.1K Ohm,Precision feedback or current-set resistor,1,$0.05,$0.05,Link,Digikey,1% precision
-100K Ohm,More continuity dividers,2,$0.01,$0.02,Link,Digikey,⚠️ For 4 pyro channels you need 4 total 100k — add 1 more
-100 Ohm,Gate series resistors on pyro MOSFETs,3,$0.01,$0.03,Link,Digikey,⚠️ Need 4 total for 4 pyros — add 1 more
+100K Ohm,More continuity dividers,2,$0.01,$0.02,Link,Digikey,
+100 Ohm,Gate series resistors on pyro MOSFETs,3,$0.01,$0.03,Link,Digikey,
 Conn_01x03,3-pin header — likely servo/PWM outputs or programming,4,$0.30,$1.20,Link,Digikey,Confirm pitch (2.54mm standard)
 TS-1088-AR02016,Tactile switch — boot/reset buttons,2,$0.20,$0.40,Link,Digikey,"Cheap SMD tactile, also on LCSC"
 STM32F722RETx,"Main MCU — ARM Cortex-M7, 216MHz, 512KB flash",1,$10.50,$10.50,Link,Digikey/Mouser,Check stock — F7 series can be supply-constrained
