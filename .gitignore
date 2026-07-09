@@ -1,0 +1,14 @@
+# build output
+flight-controller/build/
+
+# python
+__pycache__/
+*.pyc
+
+# tool output / scratch
+*.log
+*.csv
+scratch/
+
+# local editor/agent state
+.claude/
