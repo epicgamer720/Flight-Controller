@@ -25,6 +25,9 @@ static int sd_wait_transfer(uint32_t timeout_ms)
 {
   uint32_t t0 = HAL_GetTick();
   while (HAL_SD_GetCardState(&hsd1) != HAL_SD_CARD_TRANSFER) {
+    wdg_refresh();     /* card busy = progress, not a hang: a slow but
+                          healthy card may legally sit here for seconds
+                          and must not trip the IWDG (app_main.c) */
     if ((HAL_GetTick() - t0) >= timeout_ms)
       return -1;
   }

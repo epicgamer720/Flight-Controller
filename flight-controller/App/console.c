@@ -535,6 +535,13 @@ static void cmd_reboot(int argc, char **argv)
 static void cmd_wdtest(int argc, char **argv)
 {
   (void)argc; (void)argv;
+  /* Deliberate hang: ground + disarmed only (same gate as bootloader). */
+  if (((g_fsm.state != ST_INIT) && (g_fsm.state != ST_GROUND_IDLE)) ||
+      g_fsm.armed)
+  {
+    console_printf("wdtest refused: ground states + disarmed only\r\n");
+    return;
+  }
   console_printf("wdtest: halting (IRQs off) — expect IWDG reset in ~4 s\r\n");
   tx_flush(200);
   HAL_Delay(20);

@@ -155,6 +155,7 @@ void datalog_poll(uint32_t now_ms)
 
   bool due   = (now_ms - s_last_write_ms) >= LOG_FLUSH_MS;
   bool wrote = false;
+  int  chunks = 0;
   for (;;) {
     uint32_t used = s_head - s_tail;
     if (!(used >= LOG_CHUNK_BYTES || (due && used > 0)))
@@ -162,6 +163,9 @@ void datalog_poll(uint32_t now_ms)
     if (dl_write_chunk() <= 0)
       return;                           /* error (sd_ok cleared) or empty */
     wrote = true;
+    if (++chunks >= 2)                  /* bound one pass's SD time (IWDG);
+                                           the ring absorbs the backlog */
+      break;
   }
   if (wrote)
     s_last_write_ms = now_ms;

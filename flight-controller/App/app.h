@@ -162,3 +162,4 @@ void dfu_enter_bootloader(void);          /* deinit + jump 0x1FF00000, no return
 /* ---------------- app_main.c — superloop ---------------- */
 void app_init(void);                      /* module init order + health flags */
 void app_loop(void);                      /* one superloop pass */
+void wdg_refresh(void);                   /* IWDG kick from SD liveness point */

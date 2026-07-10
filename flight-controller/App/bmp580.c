@@ -84,9 +84,9 @@ static int fetch_sample(void)
     float temp_c   = (float)traw / 65536.0f;
     float press_pa = (float)praw / 64.0f;
     /* Plausibility gate: a stuck bus or corrupt burst must read as a
-     * failed sample, not poison the altitude filter. 30–110 kPa covers
-     * ~-650 m to ~9 km MSL; temp range is the sensor's rated span. */
-    if ((press_pa < 30000.0f) || (press_pa > 110000.0f) ||
+     * failed sample, not poison the altitude filter. 12–110 kPa covers
+     * ~-650 m to ~15 km MSL; temp range is the sensor's rated span. */
+    if ((press_pa < 12000.0f) || (press_pa > 110000.0f) ||
         (temp_c < -40.0f) || (temp_c > 85.0f))
         return -1;
     s_temp_c    = temp_c;
@@ -172,6 +172,13 @@ int baro_read(float *press_pa, float *temp_c)
 
     if (!s_have_data)
         return -2;
+    /* Stale or error-limited data must read as a FAILURE, not as the
+     * frozen cache: the FSM's 0.5 s baro-fail debounce (-> ST_FAULT) and
+     * the Kalman update key off this return code, and a frozen altitude
+     * served as fresh pins velocity to 0 and can fake a landing. */
+    if ((s_err_cnt >= ERR_LIMIT) ||
+        ((HAL_GetTick() - s_fresh_ms) > STALE_MS))
+        return -3;
     if (press_pa) *press_pa = s_press_pa;
     if (temp_c)   *temp_c   = s_temp_c;
     return 0;

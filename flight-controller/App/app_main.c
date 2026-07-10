@@ -59,9 +59,20 @@ void app_init(void)
     g_fsm.sd_ok    = (rc_sd == 0) && datalog_ok();
     g_fsm.radio_ok = (rc_radio == 0) && radio_ok();
 
+    /* IWDG after every slow init above: LSI 32 kHz nominal (up to ~47 kHz
+     * spec) / 32 with full reload = ~4.1 s nominal, ~2.8 s worst case.
+     * Refreshed once per app_loop() pass AND at the SD liveness point in
+     * sd_diskio.c (a healthy-but-slow card can legally hold one FatFs call
+     * for seconds — that is progress, not a hang). */
+    s_iwdg.Instance       = IWDG;
+    s_iwdg.Init.Prescaler = IWDG_PRESCALER_32;
+    s_iwdg.Init.Reload    = 4095u;
+    s_iwdg.Init.Window    = IWDG_WINDOW_DISABLE;
+    int rc_wdg = (HAL_IWDG_Init(&s_iwdg) == HAL_OK) ? 0 : -1;
+
     console_printf("\r\n=== FC boot ===\r\n");
     console_printf("reset:%s\r\n", rst);
-    console_printf("imu:%s baro:%s chg:%s radio:%s(%s) gps:%s sd:%s pyro:%s\r\n",
+    console_printf("imu:%s baro:%s chg:%s radio:%s(%s) gps:%s sd:%s pyro:%s wdg:%s\r\n",
                    rc_imu   == 0 ? "ok" : "FAIL",
                    rc_baro  == 0 ? "ok" : "FAIL",
                    rc_chg   == 0 ? "ok" : "FAIL",
@@ -69,22 +80,16 @@ void app_init(void)
                    radio_using_tcxo() ? "tcxo" : "xtal",
                    rc_gps   == 0 ? "ok" : "FAIL",
                    g_fsm.sd_ok ? "ok" : "none",
-                   rc_pyro  == 0 ? "ok" : "FAIL");
+                   rc_pyro  == 0 ? "ok" : "FAIL",
+                   rc_wdg   == 0 ? "ok" : "FAIL");
     datalog_event("BOOT");
     {
         char msg[24];
         snprintf(msg, sizeof msg, "RST:%s", rst);
         datalog_event(msg);
     }
-
-    /* IWDG last, after every slow init above: LSI ~32 kHz / 32 with full
-     * reload = ~4.1 s. Any superloop hang beyond that now reboots instead
-     * of flying dead. Refreshed once per app_loop() pass. */
-    s_iwdg.Instance       = IWDG;
-    s_iwdg.Init.Prescaler = IWDG_PRESCALER_32;
-    s_iwdg.Init.Reload    = 4095u;
-    s_iwdg.Init.Window    = IWDG_WINDOW_DISABLE;
-    (void)HAL_IWDG_Init(&s_iwdg);
+    if (rc_wdg != 0)
+        datalog_event("WDG INIT FAIL");
 
     uint32_t now = HAL_GetTick();
     s_next_ctrl = now + CTRL_DT_MS;
@@ -155,4 +160,12 @@ void app_loop(void)
         s_next_chg = now + 1000u;
         charger_poll(&g_fsm.chg);
     }
+}
+
+/* Kick the watchdog from a known-liveness point outside app_loop (the SD
+ * card-busy wait in sd_diskio.c). Safe before init: Instance still NULL. */
+void wdg_refresh(void)
+{
+    if (s_iwdg.Instance != NULL)
+        (void)HAL_IWDG_Refresh(&s_iwdg);
 }
