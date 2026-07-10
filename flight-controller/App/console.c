@@ -407,7 +407,13 @@ static void cmd_log(int argc, char **argv)
     }
     else
     {
-      console_printf("log: %s\r\n", (datalog_init() == 0) ? "started" : "start FAILED");
+      int rc = datalog_init();
+      if (rc == 0)
+        console_printf("log: started\r\n");
+      else
+        console_printf("log: start FAILED rc=%d "
+                       "(-1 no card, -2 link, -3 mount, -4 scan, -5 slots, -6/-7 open)\r\n",
+                       rc);
     }
   }
   else if (strcmp(argv[1], "stop") == 0)
