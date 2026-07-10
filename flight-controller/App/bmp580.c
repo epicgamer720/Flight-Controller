@@ -184,6 +184,18 @@ int baro_read(float *press_pa, float *temp_c)
     return 0;
 }
 
+/* Slow ground-reference tracking, called at LED_HZ from the superloop
+ * ONLY in GROUND_IDLE + disarmed: absorbs weather/thermal drift so pad
+ * AGL holds ~0 without manual re-zeroing (tau ~= 1 min). The reference
+ * freezes the moment the vehicle arms — flight altitudes are measured
+ * against the last pre-arm ground level, exactly like `zero`. */
+void baro_ground_track(void)
+{
+    if (!s_init_ok || !s_have_data || s_p0_pa <= 0.0f)
+        return;
+    s_p0_pa += BARO_TRACK_ALPHA * (s_press_pa - s_p0_pa);
+}
+
 float baro_altitude_m(float press_pa)
 {
     if (press_pa <= 0.0f || s_p0_pa <= 0.0f)

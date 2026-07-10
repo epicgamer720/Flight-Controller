@@ -28,15 +28,25 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 | Subsystem | Part / detail |
 |---|---|
 | MCU | STM32F722RET6 — Cortex-M7, up to 216 MHz |
-| IMU | ICM-45686 — 6-axis accel + gyro |
-| Barometer | BMP580 — altitude / apogee detection |
-| Storage | microSD — flight data logging |
-| Recovery | 2× pyro channels — drogue + main |
-| Control | 4× servo outputs — TVC / fin / canard |
-| GPS | JST connector + PRTR5V0U2X ESD protection |
-| Telemetry | LoRa SX1262 (915 MHz) expansion header |
+| IMU | ISM330DHCX — 6-axis accel (±16 g) + gyro, SPI (built rev; early docs said ICM-45686) |
+| Barometer | BMP580 — altitude / apogee detection (I²C) |
+| Storage | microSD (SDMMC1, 4-bit) — 200 Hz binary flight log |
+| Recovery | pyro channels — 2 designed, 1 routed on this rev (gate PB13, continuity sense) |
+| Control | 4× servo outputs (TIM2) — TVC / fin / canard |
+| GPS | NMEA module on USART6, JST-GH + PRTR5V0U2X ESD protection |
+| Telemetry | LoRa Wio-SX1262 (915 MHz, TCXO) — live downlink verified on hardware |
 | Power | 2S LiPo, BQ25883 charger, USB-C |
-| Status | Onboard status LED |
+| Status | WS2812 RGB status LED |
+
+## Bench status (July 2026)
+
+All subsystems green on hardware: IMU, barometer, SD logging, LoRa radio
+(TCXO confirmed, telemetry transmitting), charger, GPS UART. Firmware is
+hardened for flight: IWDG watchdog with reset-cause logging, Kalman
+altitude filter with outlier gating, pad-drift baro tracking, flash-persisted
+main-deploy altitude, 64 KB log ring, interlocked pad-only test-fire, and a
+full host-side test suite. Remaining before flight: ground-station pin map +
+build, threshold tuning to the motor/airframe, and a healthier USB cable.
 
 ## BOM
 
@@ -89,8 +99,9 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 
 ## Firmware & software
 
-The flight firmware and ground tools live in this repo (they superseded the
-CubeMX starter in `software/`):
+![Flight Deck — the offline flight-ops dashboard, mid-flight on the synthetic profile](docs/img/flight-deck.png)
+
+The flight firmware and ground tools live in this repo:
 
 | Where | What |
 |---|---|

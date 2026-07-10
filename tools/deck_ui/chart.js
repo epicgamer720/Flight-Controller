@@ -58,7 +58,9 @@ let launchT = null;      // tplus.launch_t_host, or null before launch
 
 /* ---------- shared time-axis view state (all charts + timeline) ---------- */
 const view = { span: 30, end: null };   // end === null -> follow live
-const FILT = { alpha: 0 };              // EMA display filter; 0 = off
+const FILT = { alpha: 0, ghost: true }; // EMA display filter; 0 = off.
+                                        // ghost: raw data drawn faintly
+                                        // under the filtered trace
 let dataNow = 0;                        // newest time reported by the server
 let lastT = -1;                         // newest sample time ingested
 const charts = [];
@@ -335,9 +337,11 @@ class CanvasChart {
           ema = (ema === ema) ? ema + FILT.alpha * (v - ema) : v;
           if (i >= iStart) f.push(rows[i][0], ema);
         }
-        ctx.globalAlpha = 0.25;
-        anyStroke = strokePts(ctx, raw, X, Y, t0, span, pw) || anyStroke;
-        ctx.globalAlpha = 1;
+        if (FILT.ghost){
+          ctx.globalAlpha = 0.25;
+          anyStroke = strokePts(ctx, raw, X, Y, t0, span, pw) || anyStroke;
+          ctx.globalAlpha = 1;
+        }
         anyStroke = strokePts(ctx, f, X, Y, t0, span, pw) || anyStroke;
       } else {
         anyStroke = strokePts(ctx, raw, X, Y, t0, span, pw) || anyStroke;

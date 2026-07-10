@@ -36,6 +36,7 @@ int   baro_init(void);                    /* probe 0x46/0x47, continuous mode @ 
 int   baro_read(float *press_pa, float *temp_c); /* latest conversion */
 float baro_altitude_m(float press_pa);    /* vs sea-level ref */
 void  baro_zero(void);                    /* set current pressure = AGL 0 */
+void  baro_ground_track(void);            /* slow pad-drift absorber (idle only) */
 bool  baro_ok(void);
 
 /* ---------------- bq25883.c — charger monitor ---------------- */
@@ -141,6 +142,7 @@ typedef struct __attribute__((packed)) {
 } log_record_t;
 _Static_assert(sizeof(log_record_t) == 68, "log record must be 68 bytes");
 int  datalog_init(void);                  /* mount, open next LOGnnn.BIN */
+bool datalog_card_present(void);          /* card-detect switch state */
 void datalog_push(const log_record_t *r); /* from control loop, never blocks */
 void datalog_poll(uint32_t now_ms);       /* drain ring -> f_write, periodic f_sync */
 void datalog_flush(void);                 /* bounded ring drain + f_sync both files */

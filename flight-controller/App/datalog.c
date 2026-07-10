@@ -283,6 +283,12 @@ void datalog_close(void)
    * truthful post-landing); push/poll no-op via the open flags until re-init. */
 }
 
+bool datalog_card_present(void)
+{
+  /* CD switch closes to GND when a card is seated: LOW = present. */
+  return HAL_GPIO_ReadPin(SD_CD_PORT, SD_CD_PIN) == GPIO_PIN_RESET;
+}
+
 bool datalog_ok(void)
 {
   return s_sd_ok;

@@ -13,6 +13,7 @@ static uint32_t s_next_ctrl;
 static uint32_t s_next_led;
 static uint32_t s_next_chg;
 static uint32_t s_next_sd;
+static bool     s_sd_present;        /* card-detect edge tracking */
 
 static IWDG_HandleTypeDef s_iwdg;
 
@@ -113,6 +114,8 @@ void app_init(void)
     s_next_led  = now + (1000u / LED_HZ);
     s_next_chg  = now + 1000u;
     s_next_sd   = now + SD_RETRY_PERIOD_MS;
+    s_sd_present = datalog_card_present();  /* boot attempt covered this
+                                               insertion — no blind retry */
 }
 
 static void push_log_record(uint32_t now_ms)
@@ -174,6 +177,8 @@ void app_loop(void)
         s_next_led = now + (1000u / LED_HZ);
         g_fsm.sd_ok = datalog_ok();
         led_poll(g_fsm.state, g_fsm.armed, g_fsm.sd_ok, g_fsm.gps.fix);
+        if (g_fsm.state == ST_GROUND_IDLE && !g_fsm.armed)
+            baro_ground_track();         /* absorb weather/thermal drift */
     }
 
     if ((int32_t)(now - s_next_chg) >= 0) {
@@ -181,24 +186,28 @@ void app_loop(void)
         charger_poll(&g_fsm.chg);
     }
 
-    /* SD auto-retry: a cold-plugged card can miss the boot-time init (card
-     * power-up race) and a reseated card should heal without a reboot.
-     * GROUND STATES ONLY — datalog_init can block ~1 s on a slow mount
-     * (IWDG covered by the sd_diskio liveness kick). No card inserted is a
-     * cheap instant -1, so this idles harmlessly with an empty slot. */
-    if (!g_fsm.sd_ok &&
-        (g_fsm.state == ST_INIT || g_fsm.state == ST_GROUND_IDLE ||
-         g_fsm.state == ST_LANDED) &&
-        (int32_t)(now - s_next_sd) >= 0) {
+    /* SD auto-retry: EDGE-TRIGGERED — one attempt per physical card
+     * insertion (remove -> insert observed while running), never a blind
+     * timer. A half-seated card can hang HAL_SD_Init past the IWDG
+     * budget, and since RAM counters reset with each watchdog reboot, a
+     * periodic retry turns one bad card into an infinite ~9 s reboot
+     * loop (observed on the bench, 2026-07-10). Boot still attempts once;
+     * a card that misses boot heals via reseat or console/deck `log
+     * start`. GROUND STATES ONLY. */
+    if ((int32_t)(now - s_next_sd) >= 0) {
         s_next_sd = now + SD_RETRY_PERIOD_MS;
-        wdg_refresh();                   /* card identification on a bad
-                                            card can run long inside HAL —
-                                            deliberate ground-state work */
-        if (datalog_init() == 0) {
-            g_fsm.sd_ok = datalog_ok();
-            datalog_event("SD REINIT OK");
+        bool present = datalog_card_present();
+        if (present && !s_sd_present && !g_fsm.sd_ok &&
+            (g_fsm.state == ST_INIT || g_fsm.state == ST_GROUND_IDLE ||
+             g_fsm.state == ST_LANDED)) {
+            wdg_refresh();               /* deliberate ground-state work */
+            if (datalog_init() == 0) {
+                g_fsm.sd_ok = datalog_ok();
+                datalog_event("SD REINIT OK");
+            }
+            wdg_refresh();
         }
-        wdg_refresh();
+        s_sd_present = present;
     }
 }
 

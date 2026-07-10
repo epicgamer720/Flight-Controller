@@ -47,6 +47,9 @@
 #define GYRO_FS_DPS          2000
 #define GYRO_CAL_SAMPLES     400     /* pad gyro bias cal (~2 s at 200 Hz), stationary */
 #define SEA_LEVEL_PA_DEFAULT 101325.0f
+#define BARO_TRACK_ALPHA     0.003f  /* pad AGL-zero drift tracking at LED_HZ:
+                                        tau ~= 1/(alpha*5 Hz) ~= 67 s; frozen
+                                        outside GROUND_IDLE-disarmed */
 
 /* ---- Kalman (1-D altitude/velocity, baro-driven) ---- */
 #define KAL_Q_ACCEL          4.0f    /* process noise (m/s^2)^2 */

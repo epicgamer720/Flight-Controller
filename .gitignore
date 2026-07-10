@@ -11,5 +11,11 @@ __pycache__/
 scratch/
 recordings/
 
+# KiCad working junk
+_autosave-*
+*.lck
+\#auto_saved_files\#
+fp-info-cache
+
 # local editor/agent state
 .claude/

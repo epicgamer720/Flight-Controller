@@ -825,6 +825,9 @@ function syncUI(){
   document.querySelectorAll('#seg-filt button').forEach(b => {
     b.className = Math.abs(parseFloat(b.dataset.alpha) - FILT.alpha) < 1e-6 ? 'on' : '';
   });
+  const gh = $('btn-ghost');
+  gh.className = 'btn' + (FILT.ghost ? ' on' : '');
+  gh.style.display = FILT.alpha > 0 ? '' : 'none';  // only meaningful filtered
   const sp = view.span >= 10 ? Math.round(view.span) : Math.round(view.span * 10) / 10;
   $('chart-h').textContent =
     'Telemetry — last ' + sp + ' s' + (live ? '' : ' (paused)');
@@ -835,6 +838,9 @@ document.querySelectorAll('#seg-filt button').forEach(b =>
   b.addEventListener('click', () => {
     FILT.alpha = parseFloat(b.dataset.alpha); syncUI(); markDirty();
   }));
+$('btn-ghost').addEventListener('click', () => {
+  FILT.ghost = !FILT.ghost; syncUI(); markDirty();
+});
 $('btn-pause').addEventListener('click', togglePause);
 $('btn-live').addEventListener('click', goLive);
 $('btn-fwin').addEventListener('click', flightWindow);
