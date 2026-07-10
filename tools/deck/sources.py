@@ -641,6 +641,7 @@ class GsJsonSource(_JsonLineSource):
         self._port = None
         self._rxbuf = b""
         self._txlock = threading.Lock()
+        self.raw_hook = None      # callable(line) — lossless .jsonl capture
 
     def send_line(self, line):
         """Write one stdin command line to the GS bridge. Returns False
@@ -674,8 +675,14 @@ class GsJsonSource(_JsonLineSource):
         self._rxbuf += data
         while b"\n" in self._rxbuf:
             raw, self._rxbuf = self._rxbuf.split(b"\n", 1)
-            kind, obj = self.ingest.feed(raw.decode("utf-8",
-                                                    errors="replace"))
+            text = raw.decode("utf-8", errors="replace")
+            hook = self.raw_hook
+            if hook is not None and text.strip():
+                try:
+                    hook(text)
+                except Exception:
+                    pass          # recording must never break ingest
+            kind, obj = self.ingest.feed(text)
             self._ingest_gs(kind, obj, self.now())
 
     def _run(self):
