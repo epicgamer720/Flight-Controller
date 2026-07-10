@@ -84,6 +84,7 @@ uint16_t servo_get_us(uint8_t idx);
 /* ---------------- status_led.c — WS2812 on PC13 (best-effort) -------- */
 void led_init(void);
 void led_set(uint8_t r, uint8_t g, uint8_t b); /* immediate bit-bang, ~30 us IRQ-off */
+void led_override(uint32_t ms);           /* mute led_poll patterns (bench test) */
 void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix); /* LED_HZ pattern */
 
 /* ---------------- kalman.c — 1-D alt/vel filter ---------------- */

@@ -16,6 +16,13 @@
 
 static uint8_t  s_last_rgb[3];
 static bool     s_have_last;
+static uint32_t s_override_until;    /* led_poll muted until this tick —
+                                        bench `led` test command window */
+
+void led_override(uint32_t ms)
+{
+    s_override_until = HAL_GetTick() + ms;   /* ms = 0 resumes patterns */
+}
 
 void led_init(void)
 {
@@ -55,6 +62,8 @@ void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix)
     static uint32_t s_tick;
     uint32_t now = HAL_GetTick();
 
+    if ((int32_t)(now - s_override_until) < 0)
+        return;                          /* bench test color is showing */
     if ((int32_t)(now - s_next_ms) < 0)
         return;                          /* self rate-limit to LED_HZ */
     s_next_ms = now + (1000u / LED_HZ);

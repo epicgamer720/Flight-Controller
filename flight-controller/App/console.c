@@ -185,7 +185,8 @@ static void cmd_help(int argc, char **argv)
     "  charge                  charger status\r\n"
     "  bootloader              reboot into USB DFU\r\n"
     "  reboot                  reset MCU\r\n"
-    "  wdtest                  hang on purpose (IWDG must reset us)\r\n");
+    "  wdtest                  hang on purpose (IWDG must reset us)\r\n"
+    "  led <r> <g> <b>|auto    WS2812 bench test (needs 5 V rail)\r\n");
 }
 
 static void cmd_status(int argc, char **argv)
@@ -568,6 +569,35 @@ static void cmd_reboot(int argc, char **argv)
   NVIC_SystemReset();
 }
 
+static void cmd_led(int argc, char **argv)
+{
+  /* Bench test for the WS2812 (needs the 5 V rail): show a raw color for
+   * 5 s, then the state patterns resume. `led auto` resumes at once. */
+  if (argc >= 2 && strcmp(argv[1], "auto") == 0)
+  {
+    led_override(0);
+    console_printf("led: state patterns resumed\r\n");
+    return;
+  }
+  if (argc < 4)
+  {
+    console_printf("usage: led <r> <g> <b> (0-255) | led auto\r\n");
+    return;
+  }
+  unsigned long r = strtoul(argv[1], NULL, 10);
+  unsigned long g = strtoul(argv[2], NULL, 10);
+  unsigned long b = strtoul(argv[3], NULL, 10);
+  if ((r > 255U) || (g > 255U) || (b > 255U))
+  {
+    console_printf("err: values 0-255\r\n");
+    return;
+  }
+  led_override(5000U);
+  led_set((uint8_t)r, (uint8_t)g, (uint8_t)b);
+  console_printf("led: %lu %lu %lu for 5 s (needs 5 V rail; 'led auto' to resume)\r\n",
+                 r, g, b);
+}
+
 static void cmd_wdtest(int argc, char **argv)
 {
   (void)argc; (void)argv;
@@ -609,6 +639,7 @@ static const cmd_t cmd_table[] =
   { "bootloader", cmd_bootloader },
   { "reboot",     cmd_reboot     },
   { "wdtest",     cmd_wdtest     },
+  { "led",        cmd_led        },
 };
 
 static void dispatch_line(char *line)

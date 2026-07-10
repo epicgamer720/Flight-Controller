@@ -141,3 +141,19 @@ outside program flash, so this survives reflashing — do it once per board.
   ring high-water.
 - `log start` failure codes: `-1` no card, `-2` link, `-3` mount, `-4` scan,
   `-5` slots, `-6`/`-7` open.
+
+## Status LED legend (WS2812 on PC13 — needs the 5 V rail)
+
+| State | Color |
+|---|---|
+| INIT | dim white |
+| GROUND_IDLE | green (bright with GPS fix, dim without; red if armed) |
+| ARMED | solid red |
+| BOOST / COAST | magenta |
+| APOGEE / DROGUE / MAIN / DESCENT | cyan |
+| LANDED | slow green blink |
+| FAULT | fast red blink |
+| SD not logging | blue flash once per second (overlays any state) |
+
+Bench test: `led <r> <g> <b>` shows a raw color for 5 s (`led auto` resumes
+the patterns immediately).

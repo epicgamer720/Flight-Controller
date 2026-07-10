@@ -34,7 +34,8 @@ const $ = id => document.getElementById(id);
 SERIES.forEach(registerBuffer);
 
 new CanvasChart('ch-alt',   { buf:'alt',   cols:[1,2],   names:['baro','GPS'],
-  scale:1, minSpan:2,   dec:1, label:'Altitude, baro and GPS' });
+  scale:1, minSpan:2,   dec:1, label:'Altitude, baro and GPS',
+  apogeeRef:true });
 new CanvasChart('ch-vel',   { buf:'vel',   cols:[1],     names:['v'],
   scale:1, minSpan:1,   dec:1, label:'Vertical velocity' });
 new CanvasChart('ch-accel', { buf:'accel', cols:[1,2,3], names:['X','Y','Z'],
@@ -214,6 +215,8 @@ function handleData(d){
   latest = d.latest || {};
   caps = d.capabilities || caps;
   peaks = d.peaks || {};
+  const apo = (peaks.apogee_m === undefined) ? null : peaks.apogee_m;
+  if (apo !== refApogee){ refApogee = apo; markDirty(); }
   counters = d.counters || {};
   recInfo = d.rec || recInfo;
   gap = (d.gap === undefined) ? null : d.gap;

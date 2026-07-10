@@ -61,6 +61,7 @@ const view = { span: 30, end: null };   // end === null -> follow live
 const FILT = { alpha: 0, ghost: true }; // EMA display filter; 0 = off.
                                         // ghost: raw data drawn faintly
                                         // under the filtered trace
+let refApogee = null;    // peaks.apogee_m from /data — apogee ref line
 let dataNow = 0;                        // newest time reported by the server
 let lastT = -1;                         // newest sample time ingested
 const charts = [];
@@ -312,6 +313,22 @@ class CanvasChart {
     ctx.strokeStyle = THEME.axis;
     ctx.beginPath(); ctx.moveTo(L, T + ph); ctx.lineTo(w - R, T + ph); ctx.stroke();
 
+    /* apogee reference line (Altitude chart only): dashed, ink-toned —
+     * a reference, not a status; skipped below 5 m (bench noise) */
+    if (o.apogeeRef && refApogee !== null && refApogee >= 5){
+      const y = Y(refApogee);
+      if (y > T && y < T + ph){
+        ctx.strokeStyle = THEME.ink3; ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(w - R, y); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '10px Consolas, ui-monospace, monospace';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = THEME.ink3;
+        ctx.fillText('apogee ' + refApogee.toFixed(1) + ' m', w - R - 2, y - 2);
+      }
+    }
+
     /* series, clipped to the plot area (null cells are skipped) */
     let anyStroke = false;
     ctx.save();
@@ -418,6 +435,24 @@ class CanvasChart {
     const r = rows[idx];
     if (r[0] < t0 - span * 0.05 || r[0] > t1 + span * 0.05) return;
 
+    // When the display filter is on, the crosshair tracks the FILTERED
+    // trace (the line the operator is reading), not the raw ghost.
+    // EMA recomputed per series with the same seeding as draw().
+    const filt = FILT.alpha > 0 ? [] : null;
+    if (filt){
+      for (let s = 0; s < o.cols.length; s++){
+        const col = o.cols[s];
+        let ema = NaN;
+        for (let i = lowerBound(rows, tCur - span); i <= idx; i++){
+          const rv = rows[i][col];
+          if (rv === null || rv === undefined) continue;
+          const v = rv * o.scale;
+          ema = (ema === ema) ? ema + FILT.alpha * (v - ema) : v;
+        }
+        filt.push(ema === ema ? ema : null);
+      }
+    }
+
     ctx.strokeStyle = THEME.axis; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(hx, T); ctx.lineTo(hx, T + ph); ctx.stroke();
 
@@ -426,18 +461,29 @@ class CanvasChart {
     for (let s = 0; s < o.cols.length; s++){
       const v = r[o.cols[s]];
       if (v === null || v === undefined) continue;
+      const y = filt && filt[s] !== null ? filt[s] : v * o.scale;
       ctx.fillStyle = THEME.series[s];
       ctx.beginPath();
-      ctx.arc(X(r[0]), Y(v * o.scale), 3.5, 0, 6.2832);
+      ctx.arc(X(r[0]), Y(y), 3.5, 0, 6.2832);
       ctx.fill();
     }
     ctx.restore();
 
-    const lines = [(r[0] - latestT()).toFixed(2) + 's'];
+    const tag = filt ? (FILT.alpha >= 0.2 ? ' · EMA light' : ' · EMA strong')
+                     : '';
+    const lines = [(r[0] - latestT()).toFixed(2) + 's' + tag];
     for (let s = 0; s < o.cols.length; s++){
       const v = r[o.cols[s]];
-      lines.push((o.names[s] ? o.names[s] + ' ' : '') +
-                 (v === null || v === undefined ? '—' : (v * o.scale).toFixed(o.dec)));
+      if (v === null || v === undefined){
+        lines.push((o.names[s] ? o.names[s] + ' ' : '') + '—');
+      } else if (filt && filt[s] !== null){
+        lines.push((o.names[s] ? o.names[s] + ' ' : '') +
+                   filt[s].toFixed(o.dec) +
+                   ' (raw ' + (v * o.scale).toFixed(o.dec) + ')');
+      } else {
+        lines.push((o.names[s] ? o.names[s] + ' ' : '') +
+                   (v * o.scale).toFixed(o.dec));
+      }
     }
     ctx.font = '11px Consolas, ui-monospace, monospace';
     let bw = 0;
