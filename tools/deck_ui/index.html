@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Deck</title>
+<link rel="stylesheet" href="/ui/deck.css">
+</head>
+<body data-token="__DECK_TOKEN__">
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Darsh Rocketry &middot; Avionics</p>
+      <h1>Flight Deck</h1>
+    </div>
+    <div class="tplus" id="tplus">T&minus; &mdash;</div>
+    <span class="stchip t-idle" id="state-chip">&mdash;</span>
+    <span class="stchip t-idle" id="armed-chip">&mdash;</span>
+    <span class="h-spacer"></span>
+    <span class="livechip"><span class="livedot" id="dot"></span><span id="conn">connecting&hellip;</span></span>
+    <span class="livechip"><span class="recdot" id="rec-dot"></span><span id="rec-txt">rec off</span></span>
+    <button class="btn" id="btn-mute" title="mute/unmute alert sounds (session only)">&#128266; sound</button>
+    <button class="btn" id="btn-theme" title="theme: auto &rarr; light &rarr; dark (session only)">&#9681; auto</button>
+  </header>
+
+  <div id="fault-banner" title="acknowledge FAULT alarm">&#9888; FAULT &mdash; alarm sounding &middot; click to silence</div>
+
+  <div class="cols">
+    <!-- ================= command rail ================= -->
+    <aside class="rail">
+      <div class="sec" id="sec-session">
+        <h3>Session</h3>
+        <div class="row">
+          <select id="port-sel" style="flex:1;min-width:0" title="COM ports (FC auto-flagged)"></select>
+          <button class="btn" id="btn-ports" title="rescan COM ports">&#8635;</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-conn-fc" title="connect the FC USB console on the selected port">Connect FC</button>
+          <button class="btn" id="btn-conn-gs" title="connect the ground-station JSON bridge on the selected port">Connect GS</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-replay" title="replay the synthetic nominal flight">Replay synthetic</button>
+          <button class="btn" id="btn-rec">&#9679; Record</button>
+        </div>
+        <div class="row" id="replay-ctl" hidden>
+          <button class="btn" id="btn-rp-pause">Pause replay</button>
+          <span class="tb-label">Speed</span>
+          <div class="seg" id="seg-rspeed">
+            <button data-speed="1" class="on">1&times;</button>
+            <button data-speed="4">4&times;</button>
+            <button data-speed="20">20&times;</button>
+          </div>
+        </div>
+        <div class="out" id="src-out"></div>
+      </div>
+
+      <div class="sec">
+        <h3>Pad commands</h3>
+        <div class="row">
+          <button class="btn danger" id="btn-arm">ARM</button>
+          <button class="btn" id="btn-disarm">Disarm</button>
+          <button class="btn" id="btn-zero">Zero baro</button>
+          <button class="btn" id="btn-cal">Gyro cal</button>
+        </div>
+        <div class="row">
+          <label class="small" for="mainalt">Main alt</label>
+          <input type="number" id="mainalt" min="30" max="2000" step="1" placeholder="150" style="width:78px">
+          <span class="small">m</span>
+          <button class="btn" id="btn-mainalt">Set</button>
+          <span class="hint" id="mainalt-cur"></span>
+        </div>
+        <div class="hint" id="pad-why"></div>
+        <div class="out" id="out-pad"></div>
+      </div>
+
+      <div class="sec" id="sec-pyro">
+        <h3>Pyro &mdash; test fire</h3>
+        <div class="row">
+          <button class="btn danger" id="btn-testen">Test-enable: &mdash;</button>
+        </div>
+        <div class="hint" id="testen-why"></div>
+        <div class="hint warn" id="gs-testen-warn" hidden>&#9888; testen state unknown over radio &mdash; enable it via the USB console before pad ops</div>
+        <div id="pyro-body" hidden>
+          <div class="gates">
+            <span class="gchip" id="g-idle">GROUND_IDLE</span>
+            <span class="gchip" id="g-disarm">DISARMED</span>
+            <span class="gchip" id="g-testen">TESTEN</span>
+            <span class="gchip" id="g-cont">CONT CH1</span>
+          </div>
+          <div class="row">
+            <label class="small" for="fire-ch">Channel</label>
+            <select id="fire-ch"><option value="1">1</option></select>
+            <label class="small" for="passcode">Passcode</label>
+            <input type="password" id="passcode" autocomplete="off" autocapitalize="off"
+                   spellcheck="false" inputmode="text" style="width:72px"
+                   title="test-fire passcode — never stored, cleared after every attempt">
+          </div>
+          <div class="fire-wrap">
+            <div class="fire-hold" id="fire-hold"
+                 aria-label="Hold with the pointer for two seconds to test-fire the selected pyro channel. Releasing or leaving the button before the countdown completes aborts. Keyboard activation is deliberately disabled: firing requires a sustained physical hold.">
+              <div class="core">HOLD 2 s<br>TO FIRE</div>
+            </div>
+            <div class="hint" id="fire-why">hold 2 s &mdash; release aborts</div>
+          </div>
+          <div class="out" id="pyro-result"></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h3>Maintenance</h3>
+        <div class="row">
+          <button class="btn" id="btn-log-start">Log start</button>
+          <button class="btn" id="btn-log-stop">Log stop</button>
+          <span class="hint" id="log-state"></span>
+        </div>
+        <div class="row">
+          <label class="small"><input type="checkbox" id="servo-en"> enable actuators (servo sliders)</label>
+        </div>
+        <div id="servo-rows">
+          <div class="servo-row"><span class="small">S1</span>
+            <input type="range" min="500" max="2500" step="10" value="1500" data-ch="1" disabled>
+            <span class="servo-val mono">1500</span></div>
+          <div class="servo-row"><span class="small">S2</span>
+            <input type="range" min="500" max="2500" step="10" value="1500" data-ch="2" disabled>
+            <span class="servo-val mono">1500</span></div>
+          <div class="servo-row"><span class="small">S3</span>
+            <input type="range" min="500" max="2500" step="10" value="1500" data-ch="3" disabled>
+            <span class="servo-val mono">1500</span></div>
+          <div class="servo-row"><span class="small">S4</span>
+            <input type="range" min="500" max="2500" step="10" value="1500" data-ch="4" disabled>
+            <span class="servo-val mono">1500</span></div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-reboot">Reboot</button>
+          <button class="btn" id="btn-boot">Bootloader</button>
+          <button class="btn" id="btn-wdtest">WD test</button>
+        </div>
+        <div class="out" id="out-maint"></div>
+      </div>
+    </aside>
+
+    <!-- ================= main column ================= -->
+    <main>
+      <div class="tiles" id="kpi-tiles">
+        <div class="tile"><div class="l">Alt AGL</div><div class="v" id="t-alt">&mdash;</div><div class="sub">m</div></div>
+        <div class="tile"><div class="l">Vel</div><div class="v" id="t-vel">&mdash;</div><div class="sub">m/s up</div></div>
+        <div class="tile"><div class="l">Battery</div><div class="v" id="t-batt">&mdash;</div><div class="sub" id="t-batt-sub">V</div></div>
+        <div class="tile"><div class="l">Continuity</div><div class="v small-v" id="t-cont">&mdash;</div><div class="sub" id="t-cont-sub">ch1</div></div>
+        <div class="tile"><div class="l">GPS</div><div class="v small-v" id="t-gps">&mdash;</div><div class="sub" id="t-gps-sub">fix &middot; sats</div></div>
+        <div class="tile peak"><div class="l">Apogee</div><div class="v" id="t-apogee">&mdash;</div><div class="sub">peak &middot; m</div></div>
+        <div class="tile peak"><div class="l">Max vel</div><div class="v" id="t-maxvel">&mdash;</div><div class="sub">peak &middot; m/s</div></div>
+        <div class="tile peak"><div class="l">Max |g|</div><div class="v" id="t-maxg">&mdash;</div><div class="sub">peak &middot; g</div></div>
+      </div>
+
+      <div class="sec" id="link-panel">
+        <h3>GS link</h3>
+        <div class="tiles">
+          <div class="tile"><div class="l">RSSI</div><div class="v" id="t-rssi">&mdash;</div><div class="sub">dBm</div></div>
+          <div class="tile"><div class="l">SNR</div><div class="v" id="t-snr">&mdash;</div><div class="sub">dB</div></div>
+          <div class="tile"><div class="l">Pkt rate</div><div class="v" id="t-rate">&mdash;</div><div class="sub">Hz</div></div>
+          <div class="tile"><div class="l">ACK / NAK</div><div class="v" id="t-acknak">0 / 0</div><div class="sub" id="t-counters"></div></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <span class="tb-label">Last packet</span>
+          <div class="meter" style="flex:1"><i id="gap-fill"></i></div>
+          <span class="small mono" id="gap-txt">&mdash;</span>
+        </div>
+      </div>
+
+      <h2 id="chart-h">Telemetry &mdash; last 30 s</h2>
+      <div class="toolbar">
+        <div class="tb-group">
+          <span class="tb-label">Span</span>
+          <div class="seg" id="seg-span">
+            <button data-span="10">10s</button>
+            <button data-span="30" class="on">30s</button>
+            <button data-span="60">60s</button>
+            <button data-span="120">120s</button>
+          </div>
+        </div>
+        <div class="tb-group">
+          <button class="btn" id="btn-pause">Pause</button>
+          <button class="btn live on" id="btn-live"><span class="ldot"></span>Live</button>
+          <button class="btn" id="btn-fwin" disabled
+                  title="zoom to the flight window: launch &minus;5 s &rarr; now">Flight window</button>
+        </div>
+        <div class="tb-group">
+          <span class="tb-label">Filter</span>
+          <div class="seg" id="seg-filt">
+            <button data-alpha="0" class="on">Off</button>
+            <button data-alpha="0.25">Light</button>
+            <button data-alpha="0.06">Strong</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline-card"><div class="timeline-box" id="timeline-box"></div></div>
+
+      <div class="chart-grid">
+        <div class="chart-card" data-buf="alt">
+          <div class="chart-head"><p class="chart-title">Altitude</p><span class="chart-unit">m AGL / MSL</span></div>
+          <div class="legend">
+            <span class="k"><span class="sw" style="background:var(--s1)"></span>baro AGL</span>
+            <span class="k"><span class="sw" style="background:var(--s2)"></span>GPS MSL</span>
+          </div>
+          <div class="chart-box" id="ch-alt"></div>
+        </div>
+        <div class="chart-card" data-buf="vel">
+          <div class="chart-head"><p class="chart-title">Vertical velocity</p><span class="chart-unit">m/s</span></div>
+          <div class="chart-box" id="ch-vel"></div>
+        </div>
+        <div class="chart-card" data-buf="accel">
+          <div class="chart-head"><p class="chart-title">Accelerometer</p><span class="chart-unit">g &middot; rails &plusmn;16</span></div>
+          <div class="legend">
+            <span class="k"><span class="sw" style="background:var(--s1)"></span>X</span>
+            <span class="k"><span class="sw" style="background:var(--s2)"></span>Y</span>
+            <span class="k"><span class="sw" style="background:var(--s3)"></span>Z</span>
+          </div>
+          <div class="chart-box" id="ch-accel"></div>
+        </div>
+        <div class="chart-card" data-buf="gyro">
+          <div class="chart-head"><p class="chart-title">Gyroscope</p><span class="chart-unit">deg/s</span></div>
+          <div class="legend">
+            <span class="k"><span class="sw" style="background:var(--s1)"></span>X</span>
+            <span class="k"><span class="sw" style="background:var(--s2)"></span>Y</span>
+            <span class="k"><span class="sw" style="background:var(--s3)"></span>Z</span>
+          </div>
+          <div class="chart-box" id="ch-gyro"></div>
+        </div>
+        <div class="chart-card" data-buf="batt">
+          <div class="chart-head"><p class="chart-title">Battery</p><span class="chart-unit">V</span></div>
+          <div class="chart-box" id="ch-batt"></div>
+        </div>
+        <div class="chart-card" data-buf="rssi">
+          <div class="chart-head"><p class="chart-title">RSSI</p><span class="chart-unit">dBm &middot; GS link</span></div>
+          <div class="chart-box" id="ch-rssi"></div>
+        </div>
+        <div class="chart-card" data-buf="snr">
+          <div class="chart-head"><p class="chart-title">SNR</p><span class="chart-unit">dB &middot; GS link</span></div>
+          <div class="chart-box" id="ch-snr"></div>
+        </div>
+        <div class="chart-card" data-buf="rate">
+          <div class="chart-head"><p class="chart-title">Packet rate</p><span class="chart-unit">Hz</span></div>
+          <div class="chart-box" id="ch-rate"></div>
+        </div>
+        <div class="chart-card" data-buf="pyro">
+          <div class="chart-head"><p class="chart-title">Pyro sense</p><span class="chart-unit">mV &middot; console only</span></div>
+          <div class="chart-box" id="ch-pyro"></div>
+        </div>
+      </div>
+
+      <div class="elog">
+        <div class="elog-head">
+          <h3>Events</h3>
+          <div class="seg" id="seg-elog">
+            <button data-f="all" class="on">All</button>
+            <button data-f="cmd">Cmd</button>
+            <button data-f="link">Link</button>
+            <button data-f="state">State</button>
+          </div>
+          <span class="hint" id="ev-count"></span>
+        </div>
+        <div class="elog-scroll"><table class="ev"><tbody id="ev-body"></tbody></table></div>
+      </div>
+
+      <footer>
+        <span id="rec-path"></span><br>
+        Flight Deck &mdash; served locally by <span class="mono">tools/flight_deck.py</span> (it owns the COM port while running).
+        Charts: drag to pan, wheel to zoom, double-click (or Live) to follow, Space pauses.
+        Commands are interlocked in the UI and re-checked by the firmware &mdash; the firmware is the real gate.
+      </footer>
+    </main>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-back">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="modal-btns">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn danger" id="modal-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script src="/ui/chart.js"></script>
+<script src="/ui/audio.js"></script>
+<script src="/ui/deck.js"></script>
+</body>
+</html>

@@ -124,6 +124,32 @@ class LineIngest:
         return (kind, obj)
 
 
+def _mask_fire_arg(name, arg):
+    """CMD_TEST_FIRE packs (passcode << 16 | channel) into arg — the
+    passcode must never reach the event log or any recording."""
+    if name == "CMD_TEST_FIRE" and isinstance(arg, int):
+        return "****<<16|ch%d" % (arg & 0xFFFF)
+    return arg
+
+
+def mask_fire_raw(text):
+    """Scrub the packed test-fire passcode out of a raw GS line before it
+    is persisted to raw.jsonl. Non-fire lines pass through untouched."""
+    if "CMD_TEST_FIRE" not in text:
+        return text
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(obj, dict) and isinstance(obj.get("arg"), int) and \
+            (obj.get("uplink") == "CMD_TEST_FIRE"
+             or obj.get("cmd_name") == "CMD_TEST_FIRE"):
+        obj["arg"] = obj["arg"] & 0xFFFF     # keep channel, drop passcode
+        obj["arg_masked"] = True
+        return json.dumps(obj)
+    return text
+
+
 # ============================================================
 # GS JSON serialization — byte-identical to gs.ino emit_telem()
 # ============================================================
@@ -436,13 +462,16 @@ class _JsonLineSource(Source):
         if kind == "uplink_echo":
             self._event("cmd_sent",
                         "uplink %s arg=%s nonce=%s tx_status=%s"
-                        % (obj.get("uplink"), obj.get("arg"),
+                        % (obj.get("uplink"),
+                           _mask_fire_arg(obj.get("uplink"), obj.get("arg")),
                            obj.get("nonce"), obj.get("tx_status")), t_host)
             return
         if kind == "cmd_echo":
             self._event("cmd_sent",
                         "cmd echo %s arg=%s nonce=%s"
-                        % (obj.get("cmd_name"), obj.get("arg"),
+                        % (obj.get("cmd_name"),
+                           _mask_fire_arg(obj.get("cmd_name"),
+                                          obj.get("arg")),
                            obj.get("nonce")), t_host)
             return
 
@@ -679,7 +708,7 @@ class GsJsonSource(_JsonLineSource):
             hook = self.raw_hook
             if hook is not None and text.strip():
                 try:
-                    hook(text)
+                    hook(mask_fire_raw(text))   # passcode never persists
                 except Exception:
                     pass          # recording must never break ingest
             kind, obj = self.ingest.feed(text)
@@ -1040,6 +1069,10 @@ class FcConsoleSource(Source):
                 self._latest["lat_deg"] = float(m.group(1))
                 self._latest["lon_deg"] = float(m.group(2))
                 self._latest["alt_gps_m"] = float(m.group(3))
+                # 5 s GPS trace alongside the 62 Hz baro trace (the alt
+                # chart's --s2 series; renderer is null-tolerant)
+                self._append_locked("alt", [round(now, 3), None,
+                                            float(m.group(3))])
             m = RE_GPSAGE.search(out)
             if m:
                 self._latest["gps_last_fix_ms"] = int(m.group(1))

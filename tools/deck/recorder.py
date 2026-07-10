@@ -71,8 +71,12 @@ class Recorder:
                 return self.session
             stamp = time.strftime("%Y%m%d_%H%M%S",
                                   time.localtime(self._clock()))
-            self.session = os.path.join(self.recdir,
-                                        "%s_%s" % (label, stamp))
+            base = os.path.join(self.recdir, "%s_%s" % (label, stamp))
+            path, n = base, 2
+            while os.path.exists(path):     # same-second source switch
+                path = "%s-%d" % (base, n)
+                n += 1
+            self.session = path
             os.makedirs(self.session, exist_ok=True)
             self._part = 1
             self._rows = 0

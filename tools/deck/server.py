@@ -88,8 +88,10 @@ class Deck:
                           "max_abs_g": None}
             self.tplus = {"launch_t_host": None, "state": None}
             if self.recorder.enabled and kind in ("fc", "gs"):
-                self.recorder.start()
-                src.push_event("rec", "recording -> %s"
+                if self.recorder.active:
+                    self.recorder.stop()   # rotate: fresh session per source
+                self.recorder.start()      # (stale high-water marks would
+                src.push_event("rec", "recording -> %s"   # drop everything)
                                % self.recorder.session)
                 if kind == "gs":
                     self.recorder.start_raw()
@@ -333,6 +335,9 @@ def make_server(deck, ui_dir, host="127.0.0.1", port=8322):
                 if body.get("on"):
                     deck.recorder.enabled = True
                     deck.recorder.start()
+                    if deck.kind == "gs" and deck.source is not None:
+                        deck.recorder.start_raw()   # lossless GS capture
+                        deck.source.raw_hook = deck.recorder.feed_raw
                 else:
                     deck.recorder.stop()
                 self._send(200, deck._rec_info())

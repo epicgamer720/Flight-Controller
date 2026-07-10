@@ -19,7 +19,7 @@ import telem_decode as td
 from deck import schema
 from deck import sources
 from deck.sources import (FcConsoleSource, LineIngest, ReplaySource,
-                          gs_json_line, synthetic_profile)
+                          gs_json_line, mask_fire_raw, synthetic_profile)
 
 
 def _telem_line(rssi=-70.0, snr=9.0, ptype=schema.PKT_TELEMETRY, **fields):
@@ -392,7 +392,15 @@ class TestFcConsoleLadder(unittest.TestCase):
         series = src.drain()["series"]
         self.assertTrue(series["accel"])
         self.assertTrue(series["alt"])
-        self.assertIsNone(series["alt"][0][2])   # no GPS column on console
+        # console alt rows are split-source: baro rows [t, alt, None] at
+        # 62 Hz from `sensors`, GPS rows [t, None, alt] at 5 s from `gps`
+        baro_rows = [r for r in series["alt"] if r[1] is not None]
+        gps_rows = [r for r in series["alt"] if r[2] is not None]
+        self.assertTrue(baro_rows)
+        self.assertTrue(gps_rows)
+        self.assertIsNone(baro_rows[0][2])
+        self.assertIsNone(gps_rows[0][1])
+        self.assertEqual(gps_rows[0][2], 120.5)
 
     def test_execute_runs_first_and_captures_reply(self):
         src, port, clock = make_src()
@@ -461,6 +469,37 @@ class TestFcConsoleThreaded(unittest.TestCase):
             src.stop()
         self.assertTrue(port.closed)
         self.assertFalse(src.connected)
+
+
+# ============================================================
+# Fire-passcode hygiene on the GS path
+# ============================================================
+class TestFirePasscodeMasking(unittest.TestCase):
+    PACKED = (0x52A5 << 16) | 0     # what gs.ino packs into arg
+
+    def test_uplink_echo_event_masks_passcode(self):
+        src = ReplaySource(synthetic="nominal", speed=1e9)
+        src._ingest_gs("uplink_echo",
+                       {"uplink": "CMD_TEST_FIRE", "cmd": 3,
+                        "arg": self.PACKED, "nonce": 9, "tx_status": 0},
+                       1.0)
+        texts = [e["text"] for e in src.drain()["events"]]
+        joined = " ".join(texts)
+        self.assertNotIn("52A5", joined)
+        self.assertNotIn(str(self.PACKED), joined)
+        self.assertIn("****", joined)
+
+    def test_raw_jsonl_scrub(self):
+        line = ('{"uplink":"CMD_TEST_FIRE","cmd":3,"arg":%d,'
+                '"nonce":9,"tx_status":0}' % self.PACKED)
+        out = mask_fire_raw(line)
+        self.assertNotIn(str(self.PACKED), out)
+        obj = __import__("json").loads(out)
+        self.assertEqual(obj["arg"], 0)          # channel kept
+        self.assertTrue(obj["arg_masked"])
+        # non-fire lines untouched
+        other = '{"uplink":"CMD_ARM","arg":0,"nonce":1,"tx_status":0}'
+        self.assertEqual(mask_fire_raw(other), other)
 
 
 # ============================================================
