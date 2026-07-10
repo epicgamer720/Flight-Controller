@@ -87,6 +87,21 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 | X322525MOB4SI | HSE crystal 25MHz, SMD 3225 | 1 | $0.60 | $0.60 | Link | LCSC | Yangxing. Alt: Abracon ABM8G-25.000MHZ |
 | Q13FC1350000400 | LSE crystal 32.768kHz (RTC) | 1 | $0.40 | $0.40 | Link | Digikey | Epson FC-135 |
 
+## Firmware & software
+
+The flight firmware and ground tools live in this repo (they superseded the
+CubeMX starter in `software/`):
+
+| Where | What |
+|---|---|
+| [`flight-controller/`](flight-controller/) | STM32F722 flight firmware — sensors, Kalman altitude filter, flight state machine, pyro control (heavily interlocked), SD logging, LoRa telemetry, IWDG watchdog, USB console |
+| [`ground-station/`](ground-station/) | RP2040 + SX1262 LoRa ground station (RadioLib sketch; pin map pending) |
+| [`shared/`](shared/) | `protocol.h` — the single source of truth for the radio link + packet formats |
+| [`tools/`](tools/) | **Flight Deck** ops dashboard, bring-up dashboard, serial monitor, log/telemetry decoders |
+| [`tests/`](tests/) | 160+ host-side unit tests (`py -m unittest discover -s tests`) |
+| [`docs/FIRMWARE.md`](docs/FIRMWARE.md) | build / flash / console / bench guide |
+| [`docs/PINMAP.md`](docs/PINMAP.md) | authoritative pin map extracted from the KiCad netlist |
+
 ## This project uses:
 
 - [KiCad](https://www.kicad.org/)
