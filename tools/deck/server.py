@@ -303,6 +303,14 @@ def make_server(deck, ui_dir, host="127.0.0.1", port=8322):
             if inject_token:
                 data = data.replace(b"__DECK_TOKEN__",
                                     deck.token.encode())
+                # cache-buster: WebView2 can serve stale JS across app
+                # relaunches despite no-store; a fresh stamp per asset
+                # mtime forces a reload whenever the UI files change
+                stamp = str(int(max(
+                    os.path.getmtime(os.path.join(ui_dir, n))
+                    for n in os.listdir(ui_dir)
+                    if os.path.isfile(os.path.join(ui_dir, n)))))
+                data = data.replace(b"__DECK_V__", stamp.encode())
             ext = os.path.splitext(name)[1].lower()
             ctype = {".html": "text/html; charset=utf-8",
                      ".js": "text/javascript; charset=utf-8",
