@@ -232,12 +232,17 @@ void telem_poll(uint32_t now_ms)
             (now_ms - s_last_reinit_ms) >= RADIO_REINIT_PERIOD_MS) {
             s_last_reinit_ms = now_ms;
             s_reinit_attempts++;
+            /* A marginal chip (half-broken joint) can stretch init well
+             * past the nominal ~250 ms — this is deliberate ground-state
+             * work, not a hang, so keep the IWDG fed around it. */
+            wdg_refresh();
             if (radio_init() == 0) {
                 s_tx_pending = false;      /* stale pre-failure state */
                 s_rx_open    = false;
                 g_fsm.radio_ok = radio_ok();
                 datalog_event("RADIO REINIT OK");
             }
+            wdg_refresh();
         }
         if (!g_fsm.radio_ok)
             return;

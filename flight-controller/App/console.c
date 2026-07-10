@@ -470,9 +470,11 @@ static void cmd_radio(int argc, char **argv)
     console_printf("  reinit attempts: %lu  tx timeouts: %lu\r\n",
                    (unsigned long)reinit, (unsigned long)txto);
   }
-  if (radio_ok())
+  if (radio_ok() && !(LORA_BUSY_PORT->IDR & LORA_BUSY_PIN))
   { /* raw GetIrqStatus (non-clearing): pending bits the chip has latched.
-     * TxDone pending here + DIO1 pin low = the DIO1 line is open. */
+     * TxDone pending here + DIO1 pin low = the DIO1 line is open.
+     * Skipped while BUSY is high — commanding a busy/half-dead chip
+     * raw from console context is asking for trouble. */
     uint8_t tx[4] = { 0x12, 0x00, 0x00, 0x00 }, rx[4] = { 0 };
     if (spi_bus_txrx(LORA_CS_PORT, LORA_CS_PIN, tx, rx, 4) == 0)
       console_printf("  chip irq status: 0x%02X%02X (bit0 TxDone, bit1 RxDone, bit9 Timeout)\r\n",

@@ -687,7 +687,10 @@ class GsJsonSource(_JsonLineSource):
 
     def _open(self):
         import serial   # lazy: importable without pyserial installed
-        return serial.Serial(self.com, 115200, timeout=0.05)
+        # write_timeout: a wedged CDC endpoint can block a Windows serial
+        # write indefinitely (observed: 6+ min) — fail into reconnect.
+        return serial.Serial(self.com, 115200, timeout=0.05,
+                             write_timeout=0.5)
 
     def _close_port(self):
         p, self._port = self._port, None
@@ -793,7 +796,9 @@ class FcConsoleSource(Source):
         if self._serial_factory is not None:
             return self._serial_factory(self.com)
         import serial   # lazy: importable without pyserial installed
-        return serial.Serial(self.com, 115200, timeout=0.001)
+        # write_timeout: see GsJsonSource._open — wedged CDC blocks writes
+        return serial.Serial(self.com, 115200, timeout=0.001,
+                             write_timeout=0.5)
 
     def _close_port(self):
         p, self._port = self._port, None

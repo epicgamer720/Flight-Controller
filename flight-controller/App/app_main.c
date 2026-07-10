@@ -191,10 +191,14 @@ void app_loop(void)
          g_fsm.state == ST_LANDED) &&
         (int32_t)(now - s_next_sd) >= 0) {
         s_next_sd = now + SD_RETRY_PERIOD_MS;
+        wdg_refresh();                   /* card identification on a bad
+                                            card can run long inside HAL —
+                                            deliberate ground-state work */
         if (datalog_init() == 0) {
             g_fsm.sd_ok = datalog_ok();
             datalog_event("SD REINIT OK");
         }
+        wdg_refresh();
     }
 }
 
