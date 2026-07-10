@@ -148,6 +148,14 @@ void datalog_close(void);
 bool datalog_ok(void);
 void datalog_event(const char *msg);      /* human-readable event -> LOGnnn.TXT sidecar */
 
+/* ---------------- param_store.c — flash param persistence ------------ */
+/* Append-record store in flash sector 7 (0x08060000; linker caps code at
+ * 384K so overlap is impossible). Persists ONLY main_alt_m. NEVER persist
+ * test_enabled (must boot off, CLAUDE.md §2), gyro bias or baro zero
+ * (both re-done each pad session by design). */
+int  param_load(uint32_t *main_alt_cm);   /* 0 = newest valid record found */
+int  param_save(uint32_t main_alt_cm);    /* ground states only; 0 = saved */
+
 /* ---------------- console.c — USB-CDC command console ---------------- */
 void console_init(void);
 void console_poll(void);

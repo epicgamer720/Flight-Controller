@@ -54,6 +54,20 @@ void app_init(void)
     telem_init();
     fsm_init();                          /* zeroes g_fsm — flags set below */
 
+    /* Persisted params (flash sector 7): override the compile-time default
+     * if a valid record exists. ONLY main_alt_m — see param_store.c for
+     * what must never be persisted. */
+    {
+        uint32_t alt_cm;
+        if (param_load(&alt_cm) == 0) {
+            g_fsm.main_alt_m = (float)alt_cm / 100.0f;
+            char msg[40];
+            snprintf(msg, sizeof msg, "PARAM main_alt=%lu cm",
+                     (unsigned long)alt_cm);
+            datalog_event(msg);
+        }
+    }
+
     g_fsm.imu_ok   = (rc_imu == 0);
     g_fsm.baro_ok  = (rc_baro == 0);
     g_fsm.sd_ok    = (rc_sd == 0) && datalog_ok();

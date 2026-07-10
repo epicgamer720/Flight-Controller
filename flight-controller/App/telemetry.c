@@ -178,10 +178,13 @@ static void handle_command(const uint8_t *buf, int len)
         break;
     case CMD_SET_MAIN_ALT: {
         float m = (float)c.arg / 100.0f;     /* arg is cm */
-        if (m >= 30.0f && m <= 2000.0f)
+        if (m >= 30.0f && m <= 2000.0f) {
             g_fsm.main_alt_m = m;
-        else
+            (void)param_save(c.arg);         /* best-effort persist; the gate
+                                                inside refuses non-ground states */
+        } else {
             ack = false;
+        }
         break;
     }
     case CMD_ZERO_BARO:

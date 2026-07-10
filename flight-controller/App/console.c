@@ -390,6 +390,18 @@ static void cmd_mainalt(int argc, char **argv)
   }
   g_fsm.main_alt_m = m;
   console_printf("main_alt = %s m\r\n", ff(g_fsm.main_alt_m));
+  {
+    /* Persist (ground states only — param_save gates internally). */
+    int rc = param_save((uint32_t)((m * 100.0f) + 0.5f));
+    if (rc == 0)
+    {
+      console_printf("saved to flash\r\n");
+    }
+    else
+    {
+      console_printf("flash save FAILED (%d)\r\n", rc);
+    }
+  }
 }
 
 static void cmd_log(int argc, char **argv)
