@@ -60,14 +60,47 @@ works too — see `docs/PINMAP.md`.)
 
 ## Tools (`tools/`)
 
-`py -m pip install -r requirements.txt` (pyserial — only needed by the two serial tools).
+`py -m pip install -r requirements.txt` (pyserial for the serial tools, pywebview for Flight Deck's native window).
 
 | Tool | Use |
 |---|---|
+| `py tools/flight_deck.py` | **Flight Deck** — the flight-ops dashboard (see below) |
 | `py tools/serial_monitor.py` | timestamped console; auto-detects the FC COM port (`--list`, `--port COM7`) |
-| `py tools/live_dashboard.py [--port COM9] [--http 8321]` | live charts at http://localhost:8321. **Owns the COM port while running** — stop it before serial_monitor or flashing |
+| `py tools/live_dashboard.py [--port COM9] [--http 8321]` | simple bring-up charts at http://localhost:8321. **Owns the COM port while running** — stop it before serial_monitor or flashing |
 | `py tools/decode_log.py LOG001.BIN [out.csv]` | SD binary log → CSV (68-B records, CRC-checked, resyncs past corruption) |
 | `py tools/telem_decode.py <hex>` | parse/build LoRa packets from `shared/protocol.h`; importable by the GS bridge |
+
+## Flight Deck (`tools/flight_deck.py`)
+
+Offline mission-control app in a native window (pywebview/WebView2; `--browser`
+falls back to the default browser). Fully local — 127.0.0.1 only.
+
+```
+py tools/flight_deck.py                          # FC over USB, auto-detects the port
+py tools/flight_deck.py --source gs --port COM7  # ground-station JSON bridge
+py tools/flight_deck.py --source replay --synthetic --speed 4   # no hardware needed
+py tools/flight_deck.py --source replay --replay recordings/deck_.../raw.jsonl
+```
+
+- **Instruments**: T+ clock (starts at BOOST), state timeline, alt/vel/accel/
+  gyro/battery charts with labeled event markers + pan/zoom/pause + flight-window
+  button, peak tiles (apogee, max vel, max |g|), continuity/battery/GPS tiles,
+  GS link panel (RSSI/SNR/packet rate/gap/ACK-NAK), scrolling event log with
+  verbatim firmware refusals, audio alerts (state, FAULT, low battery), theme
+  toggle.
+- **Commands** are interlocked in the UI *and* re-checked by the firmware (the
+  firmware is always the real gate): arm/disarm confirmations, mainalt bounded
+  30–2000 m (the radio path's stricter bound), test-fire behind test-enable →
+  passcode (never stored, never logged — masked even in recordings) → 2 s
+  hold-to-fire. In flight the FC is TX-only, so every command control disables
+  itself with the reason shown.
+- **Recording**: each live session writes `recordings/deck_<stamp>/telem.csv` +
+  `events.csv` (+ lossless `raw.jsonl` on GS sessions); replay any of them with
+  `--source replay --replay <file>`. FC sessions are poll-rate on the ground —
+  the FC's own 200 Hz SD log remains the authoritative flight record.
+- **Owns its COM port** while running (like live_dashboard). It closes the port
+  on every exit path; if a hard-killed host process ever wedges the FC's USB
+  console (port opens but no replies), tap RESET or replug USB.
 
 ## Tests
 
