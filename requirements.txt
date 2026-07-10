@@ -1,4 +1,8 @@
 # Host-side tools that talk to the board over USB serial
-# (tools/live_dashboard.py, tools/serial_monitor.py).
+# (tools/live_dashboard.py, tools/serial_monitor.py, tools/flight_deck.py).
 # tools/decode_log.py, tools/telem_decode.py and tests/ are stdlib-only.
 pyserial>=3.5
+# Flight Deck native window shell (tools/flight_deck.py GUI only; the app
+# also runs in a plain browser with --browser). Needs the Edge WebView2
+# runtime on Windows (ships with Win10/11 via Edge).
+pywebview>=5
