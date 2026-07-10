@@ -12,6 +12,7 @@
 static uint32_t s_next_ctrl;
 static uint32_t s_next_led;
 static uint32_t s_next_chg;
+static uint32_t s_next_sd;
 
 static IWDG_HandleTypeDef s_iwdg;
 
@@ -111,6 +112,7 @@ void app_init(void)
     s_next_ctrl = now + CTRL_DT_MS;
     s_next_led  = now + (1000u / LED_HZ);
     s_next_chg  = now + 1000u;
+    s_next_sd   = now + SD_RETRY_PERIOD_MS;
 }
 
 static void push_log_record(uint32_t now_ms)
@@ -177,6 +179,22 @@ void app_loop(void)
     if ((int32_t)(now - s_next_chg) >= 0) {
         s_next_chg = now + 1000u;
         charger_poll(&g_fsm.chg);
+    }
+
+    /* SD auto-retry: a cold-plugged card can miss the boot-time init (card
+     * power-up race) and a reseated card should heal without a reboot.
+     * GROUND STATES ONLY — datalog_init can block ~1 s on a slow mount
+     * (IWDG covered by the sd_diskio liveness kick). No card inserted is a
+     * cheap instant -1, so this idles harmlessly with an empty slot. */
+    if (!g_fsm.sd_ok &&
+        (g_fsm.state == ST_INIT || g_fsm.state == ST_GROUND_IDLE ||
+         g_fsm.state == ST_LANDED) &&
+        (int32_t)(now - s_next_sd) >= 0) {
+        s_next_sd = now + SD_RETRY_PERIOD_MS;
+        if (datalog_init() == 0) {
+            g_fsm.sd_ok = datalog_ok();
+            datalog_event("SD REINIT OK");
+        }
     }
 }
 

@@ -19,6 +19,7 @@
 #define PAD_RX_WINDOW_MS        300   /* RX window after each pad TX; TX-only in flight */
 #define TELEM_TX_TIMEOUT_MS     2000  /* force-clear a stuck TX (airtime ~40 ms) */
 #define RADIO_REINIT_PERIOD_MS  5000  /* retry radio_init while dead — ground states only */
+#define SD_RETRY_PERIOD_MS      5000  /* retry datalog_init while dead — ground states only */
 
 /* ---- Flight detection thresholds ---- */
 #define LAUNCH_G             3.0f    /* |accel| sustained above this ... */
