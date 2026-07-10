@@ -182,7 +182,8 @@ static void cmd_help(int argc, char **argv)
     "  radio                   radio health\r\n"
     "  charge                  charger status\r\n"
     "  bootloader              reboot into USB DFU\r\n"
-    "  reboot                  reset MCU\r\n");
+    "  reboot                  reset MCU\r\n"
+    "  wdtest                  hang on purpose (IWDG must reset us)\r\n");
 }
 
 static void cmd_status(int argc, char **argv)
@@ -525,6 +526,16 @@ static void cmd_reboot(int argc, char **argv)
   NVIC_SystemReset();
 }
 
+static void cmd_wdtest(int argc, char **argv)
+{
+  (void)argc; (void)argv;
+  console_printf("wdtest: halting (IRQs off) — expect IWDG reset in ~4 s\r\n");
+  tx_flush(200);
+  HAL_Delay(20);
+  __disable_irq();
+  for (;;) { }                /* IWDG must bring us back */
+}
+
 typedef struct { const char *name; void (*fn)(int, char **); } cmd_t;
 
 static const cmd_t cmd_table[] =
@@ -548,6 +559,7 @@ static const cmd_t cmd_table[] =
   { "charge",     cmd_charge     },
   { "bootloader", cmd_bootloader },
   { "reboot",     cmd_reboot     },
+  { "wdtest",     cmd_wdtest     },
 };
 
 static void dispatch_line(char *line)

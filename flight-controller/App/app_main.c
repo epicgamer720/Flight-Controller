@@ -4,6 +4,7 @@
  * telemetry/pyro/SD polled every pass (all non-blocking).
  * ============================================================ */
 #include "app.h"
+#include <stdio.h>
 #include <string.h>
 
 #define CTRL_DT_MS (1000u / CTRL_HZ)
@@ -12,8 +13,30 @@ static uint32_t s_next_ctrl;
 static uint32_t s_next_led;
 static uint32_t s_next_chg;
 
+static IWDG_HandleTypeDef s_iwdg;
+
+/* Read RCC->CSR reset flags into a short string, then clear them so the
+ * next reset reports fresh causes. Call before anything else can reset. */
+static void reset_cause_read(char *buf, size_t n)
+{
+    buf[0] = '\0';
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST)) strncat(buf, " LPWR", n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST)) strncat(buf, " WWDG", n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) strncat(buf, " IWDG", n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST))  strncat(buf, " SFT",  n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST))  strncat(buf, " POR",  n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST))  strncat(buf, " BOR",  n - strlen(buf) - 1u);
+    if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))  strncat(buf, " PIN",  n - strlen(buf) - 1u);
+    if (buf[0] == '\0')
+        strncat(buf, " none", n - strlen(buf) - 1u);
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+}
+
 void app_init(void)
 {
+    char rst[40];
+    reset_cause_read(rst, sizeof rst);   /* first: flags survive only until cleared */
+
     /* Console first so every later init can report over USB. */
     console_init();
     usb_device_init();
@@ -37,6 +60,7 @@ void app_init(void)
     g_fsm.radio_ok = (rc_radio == 0) && radio_ok();
 
     console_printf("\r\n=== FC boot ===\r\n");
+    console_printf("reset:%s\r\n", rst);
     console_printf("imu:%s baro:%s chg:%s radio:%s(%s) gps:%s sd:%s pyro:%s\r\n",
                    rc_imu   == 0 ? "ok" : "FAIL",
                    rc_baro  == 0 ? "ok" : "FAIL",
@@ -47,6 +71,20 @@ void app_init(void)
                    g_fsm.sd_ok ? "ok" : "none",
                    rc_pyro  == 0 ? "ok" : "FAIL");
     datalog_event("BOOT");
+    {
+        char msg[24];
+        snprintf(msg, sizeof msg, "RST:%s", rst);
+        datalog_event(msg);
+    }
+
+    /* IWDG last, after every slow init above: LSI ~32 kHz / 32 with full
+     * reload = ~4.1 s. Any superloop hang beyond that now reboots instead
+     * of flying dead. Refreshed once per app_loop() pass. */
+    s_iwdg.Instance       = IWDG;
+    s_iwdg.Init.Prescaler = IWDG_PRESCALER_32;
+    s_iwdg.Init.Reload    = 4095u;
+    s_iwdg.Init.Window    = IWDG_WINDOW_DISABLE;
+    (void)HAL_IWDG_Init(&s_iwdg);
 
     uint32_t now = HAL_GetTick();
     s_next_ctrl = now + CTRL_DT_MS;
@@ -88,6 +126,8 @@ static void push_log_record(uint32_t now_ms)
 void app_loop(void)
 {
     uint32_t now = HAL_GetTick();
+
+    HAL_IWDG_Refresh(&s_iwdg);           /* worst single pass << 4.1 s timeout */
 
     /* 200 Hz control + logging tick (drift-free; resync if badly late) */
     if ((int32_t)(now - s_next_ctrl) >= 0) {
