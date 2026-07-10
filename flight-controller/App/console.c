@@ -470,6 +470,14 @@ static void cmd_radio(int argc, char **argv)
     console_printf("  reinit attempts: %lu  tx timeouts: %lu\r\n",
                    (unsigned long)reinit, (unsigned long)txto);
   }
+  if (radio_ok())
+  { /* raw GetIrqStatus (non-clearing): pending bits the chip has latched.
+     * TxDone pending here + DIO1 pin low = the DIO1 line is open. */
+    uint8_t tx[4] = { 0x12, 0x00, 0x00, 0x00 }, rx[4] = { 0 };
+    if (spi_bus_txrx(LORA_CS_PORT, LORA_CS_PIN, tx, rx, 4) == 0)
+      console_printf("  chip irq status: 0x%02X%02X (bit0 TxDone, bit1 RxDone, bit9 Timeout)\r\n",
+                     rx[2], rx[3]);
+  }
   console_printf("  BUSY pin: %d  DIO1 pin: %d\r\n",
                  (LORA_BUSY_PORT->IDR & LORA_BUSY_PIN) ? 1 : 0,
                  (LORA_IRQ_PORT->IDR & LORA_IRQ_PIN) ? 1 : 0);

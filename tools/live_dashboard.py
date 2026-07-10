@@ -37,10 +37,12 @@ RE_STATE = re.compile(r"state:\s+(\w+)")
 RE_ARMED = re.compile(r"armed:\s+(\d)\s+testen:\s*(\d)")
 RE_ALTVEL = re.compile(r"alt:\s+(-?[\d.]+) m AGL\s+vel: (-?[\d.]+)")
 RE_BATT = re.compile(r"batt:\s+(\d+) mV")
-RE_HEALTH = re.compile(r"imu=(\d) baro=(\d) sd=(\d) radio=(\d)")
+RE_HEALTH = re.compile(r"imu=(\d) baro=(\d) sd=(\d) radio=(\d)(?:\s+chg=(\d)\s+gps=(\d))?")
 RE_PYRO = re.compile(r"cont=0x([0-9A-Fa-f]+) fired=0x([0-9A-Fa-f]+) sense=(\d+) mV")
 RE_GPSFIX = re.compile(r"fix=(\d) sats=(\d+)")
 RE_RADIO = re.compile(r"radio:\s+(\w+)\s+tcxo:\s+(\S+)")
+RE_RADIO_CNT = re.compile(r"reinit attempts:\s+(\d+)\s+tx timeouts:\s+(\d+)")
+RE_RADIO_IRQ = re.compile(r"chip irq status:\s+0x([0-9A-Fa-f]+)")
 
 
 class Poller(threading.Thread):
@@ -112,6 +114,15 @@ class Poller(threading.Thread):
                         with self.lock:
                             self.status["radio_txt"] = m.group(1)
                             self.status["radio_tcxo"] = m.group(2)
+                    m = RE_RADIO_CNT.search(out)
+                    if m:
+                        with self.lock:
+                            self.status["radio_reinit"] = int(m.group(1))
+                            self.status["radio_txto"] = int(m.group(2))
+                    m = RE_RADIO_IRQ.search(out)
+                    if m:
+                        with self.lock:
+                            self.status["radio_irq"] = m.group(1)
                     last_radio = time.time()
                 elif time.time() - last_sensor >= SENSOR_PERIOD:
                     out = self._txn(port, "sensors", b"baro:")
@@ -156,9 +167,13 @@ class Poller(threading.Thread):
                 self.status["vel_ms"] = float(m.group(2))
             m = RE_HEALTH.search(out)
             if m:
+                g = m.groups()
                 self.status["imu_ok"], self.status["baro_ok"], \
                     self.status["sd_ok"], self.status["radio_ok"] = \
-                    (int(x) for x in m.groups())
+                    (int(x) for x in g[:4])
+                if g[4] is not None:          # newer firmware: chg/gps too
+                    self.status["chg_ok"] = int(g[4])
+                    self.status["gps_ok"] = int(g[5])
             m = RE_BATT.search(out)
             if m:
                 self.batt.append([round(now, 2), int(m.group(1))])
@@ -291,8 +306,9 @@ PAGE = r"""<!doctype html>
     <div class="chip"><div class="l">Alt AGL</div><div class="v" id="alt">—</div></div>
     <div class="chip"><div class="l">Vel</div><div class="v" id="vel">—</div></div>
     <div class="chip"><div class="l">GPS</div><div class="v small" id="gps">—</div></div>
-    <div class="chip"><div class="l">Health imu&middot;baro&middot;sd&middot;radio</div><div class="v small" id="health">—</div></div>
+    <div class="chip"><div class="l">Health imu&middot;baro&middot;sd&middot;radio&middot;chg&middot;gps</div><div class="v small" id="health">—</div></div>
     <div class="chip"><div class="l">Radio</div><div class="v small" id="radio">—</div></div>
+    <div class="chip"><div class="l">Radio link</div><div class="v small" id="rlink">—</div></div>
   </div>
 
   <h2 id="chart-h">Telemetry — last 10 s</h2>
@@ -795,13 +811,19 @@ function tick(){
     setText('alt',s.alt_m!==undefined?s.alt_m.toFixed(1)+' m':'—');
     setText('vel',s.vel_ms!==undefined?s.vel_ms.toFixed(1)+' m/s':'—');
     setText('gps',s.gps_fix===1?('fix · '+s.gps_sats+' sats'):(s.gps_fix===0?'no fix':'—'));
-    var h=[s.imu_ok,s.baro_ok,s.sd_ok,s.radio_ok];
-    setText('health',h[0]===undefined?'—':h.map(function(v){return v?'●':'○';}).join(' '));
+    var h=[s.imu_ok,s.baro_ok,s.sd_ok,s.radio_ok,s.chg_ok,s.gps_ok]
+          .filter(function(v){return v!==undefined;});
+    setText('health',h.length===0?'—':h.map(function(v){return v?'●':'○';}).join(' '));
     var rEl=document.getElementById('radio');
     if(s.radio_txt){
       rEl.textContent=s.radio_txt==='ok'?('ok · '+(s.radio_tcxo==='yes'?'tcxo':'xtal')):'no chip';
       rEl.className='v small '+(s.radio_txt==='ok'?'ok':'bad');
     } else { rEl.textContent='—'; }
+    var rl=document.getElementById('rlink');
+    if(s.radio_txto!==undefined){
+      rl.textContent='txto '+s.radio_txto+' · reinit '+s.radio_reinit;
+      rl.className='v small '+(s.radio_txto>0||s.radio_reinit>0?'meh':'ok');
+    } else { rl.textContent='—'; }
   }).catch(function(){
     document.getElementById('dot').className='livedot';
     setText('conn','dashboard server stopped');

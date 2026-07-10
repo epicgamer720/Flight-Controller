@@ -110,13 +110,19 @@ See §7 for the exact structs. Key fields downlinked: state, `t_ms`, GPS lat/lon
   - Flash command:
     ```
     dfu-util -l                      # confirm 0483:df11
-    arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
-    dfu-util -a 0 -d 0483:df11 -s 0x08000000:leave -D firmware.bin
+    dfu-util -a 0 -d 0483:df11 -s 0x08000000:leave -D build/fc.bin
     ```
-- **Build system**: `arm-none-eabi-gcc` + CMake. Recommended workflow given CubeMX is GUI-only (an agent can't run it): **Darsh generates the base project once with STM32CubeMX** (clocks: 216 MHz sysclk + 48 MHz USB; peripherals: SPI1, the GPS UART, the sensor I²C, SDIO/SPI for SD, timers for servo PWM + scheduling, USB_OTG_FS as CDC) and commits it. Claude Code then implements drivers + flight logic on top of the generated HAL skeleton. *Alternative*: libopencm3 (fully scriptable, no GUI) — but HAL has the better F7 USB/SDIO story.
-- Linker: flash base `0x08000000`, 512 KB flash / 256 KB RAM on RET6.
+    If dfu-util says "cannot open", replug USB while holding BOOT.
+- **Build system**: `arm-none-eabi-gcc` + **Make** (CubeMX-generated Makefile, committed). Build from `flight-controller/`:
+  ```
+  C:/Users/14437/toolchains/build-tools/bin/make.exe -j GCC_PATH=C:/Users/14437/toolchains/arm-gcc/bin
+  ```
+  Outputs `build/fc.elf/.hex/.bin`. The base project was generated once with STM32CubeMX (216 MHz sysclk + 48 MHz USB; SPI1, USART6 GPS, I²C1 sensors, SDMMC1, TIM2 servo PWM, USB_OTG_FS CDC); drivers + flight logic live in `App/`.
+- Linker: flash base `0x08000000`, 512 KB flash / 256 KB RAM on RET6. **FLASH is capped at 384 KB in the .ld**: sector 7 (`0x08060000`, 128 KB) is the `main_alt` param store (`App/param_store.c`) — code overlapping it fails at link. Top 16 B of RAM (`0x2003FFF0`) are reserved for the DFU handoff magic (`App/dfu.c` + `SystemInit`, kept in lockstep).
 
 ### 5.2 Pin map (✅ known / `TODO` extract from schematic)
+
+> **Resolved:** the full pin map was extracted from the KiCad netlist — see **`docs/PINMAP.md`** (authoritative; it wins over the planning sketch below on any conflict).
 
 | Function | Pin | Status |
 |---|---|---|
@@ -166,6 +172,7 @@ Emit a `PKT_EVENT` on every state transition and pyro action.
 
 - Log raw IMU + baro + GPS + state at high rate (target 100–500 Hz) as **fixed binary records** to a file; periodic flush; flush + close on `ST_LANDED`.
 - Use SDIO + DMA with a ring buffer so logging never blocks the control loop. (If SD is on SPI it shares nothing with SPI1 only if it's a different bus — confirm.)
+- Implemented: **64 KB RAM ring** (`LOG_RING_BYTES`, ~4.8 s of 200 Hz 68-B records) drained to SDMMC1; `log stat` reports drops + ring high-water; flush (not close) on `ST_FAULT`.
 - Provide `tools/decode_log.py` to turn the binary log into CSV.
 
 ### 5.6 Power / charger (BQ25883)
@@ -175,6 +182,8 @@ Emit a `PKT_EVENT` on every state transition and pyro action.
 ### 5.7 Scheduling
 
 Bare-metal superloop with a timer tick is sufficient and most deterministic for this. Suggested rates: control/state-machine + sensor sample 100–500 Hz, telemetry TX 1 Hz pad / 10 Hz flight, log flush ~1–5 Hz, charger poll ~1 Hz. If using an RTOS, isolate the pyro/state task at highest priority and never let logging/telemetry preempt it.
+
+An **IWDG (~4 s)** is active: armed at the end of `app_init()` (after the slow inits), refreshed once per superloop pass plus at the SD liveness point. Any hang reboots the MCU; the reset cause is printed in the boot banner and logged. `wdtest` on the console proves it end-to-end.
 
 ---
 
@@ -206,6 +215,8 @@ Bare-metal superloop with a timer tick is sufficient and most deterministic for 
 
 ## 7. `shared/protocol.h` (drop into /shared, compile on both boards)
 
+The checked-in `shared/protocol.h` is the source of truth; this listing is a reference and may lag it (e.g. the added `FLAG_CHG_OK`/`FLAG_GPS_OK` health flags).
+
 ```c
 #pragma once
 #include <stdint.h>
@@ -226,7 +237,7 @@ Bare-metal superloop with a timer tick is sufficient and most deterministic for 
 /* ---- Protocol ---- */
 #define LINK_MAGIC    0x52   /* 'R' */
 #define PROTO_VERSION 1
-#define NUM_PYRO      2      /* TODO: confirm from schematic */
+#define NUM_PYRO      1      /* confirmed from schematic: gate PB13, sense PC1 */
 
 typedef enum {
     PKT_TELEMETRY = 0x01,
@@ -302,10 +313,11 @@ Validation on RX: check `magic`, `version`, then `crc16_ccitt(buf, len-2) == crc
 
 **FC (STM32F722, DFU only):**
 ```
-cmake -B build && cmake --build build
-arm-none-eabi-objcopy -O binary build/fc.elf fc.bin
-# enter bootloader: BOOT0 high + reset, or console "bootloader" cmd
-dfu-util -a 0 -d 0483:df11 -s 0x08000000:leave -D fc.bin
+cd flight-controller
+C:/Users/14437/toolchains/build-tools/bin/make.exe -j GCC_PATH=C:/Users/14437/toolchains/arm-gcc/bin
+# enter bootloader: console "bootloader" cmd, or hold BOOT (SW2) + tap RESET (SW1)
+dfu-util -a 0 -d 0483:df11 -s 0x08000000:leave -D build/fc.bin
+# "cannot open"? replug USB while holding BOOT
 ```
 
 **GS (RP2040):**
@@ -333,10 +345,10 @@ cp ground-station/build/*.uf2 /Volumes/RPI-RP2   # or: picotool load -f gs.uf2
 
 ## 10. Open items (resolve, then implement)
 
-- [ ] Extract full pin map + part numbers from KiCad netlist (all `TODO` rows).
-- [ ] Confirm **TCXO vs XTAL** on FC module and GS chip; set DIO3 config accordingly.
-- [ ] Confirm **pyro channel count** + gate/continuity pins; set `NUM_PYRO`.
-- [ ] Confirm SD interface (SDIO vs SPI), servo count/timers, battery sense source.
-- [ ] Identify GPS + barometer parts → choose drivers/protocols.
+- [x] Extract full pin map + part numbers from KiCad netlist (all `TODO` rows) — **done**, see `docs/PINMAP.md`.
+- [x] Confirm **TCXO vs XTAL** on FC module — **confirmed on hardware**: Wio-SX1262 is TCXO (1.8 V via DIO3; init succeeds on the TCXO path). GS chip: still TODO from the GS schematic.
+- [x] Confirm **pyro channel count** + gate/continuity pins; set `NUM_PYRO` — **done**: 1 channel (gate PB13, sense PC1), `NUM_PYRO 1`.
+- [x] Confirm SD interface (SDIO vs SPI), servo count/timers, battery sense source — **done**: SDMMC1 4-bit; servos ×4 on TIM2 CH1–4; battery via BQ25883 ADC (I²C).
+- [x] Identify GPS + barometer parts → choose drivers/protocols — baro **done**: BMP580 (I²C1). GPS: external NMEA module on USART6 (J8 JST-GH; generic GGA/RMC autobaud driver — exact module part not identified).
 - [ ] Tune flight thresholds (`LAUNCH_G`, `MAIN_ALT`, debounces, timers) to the motor/airframe.
 - [ ] Confirm 915 MHz TX power vs regulatory (Part 15 / amateur 33 cm) before range tests.
