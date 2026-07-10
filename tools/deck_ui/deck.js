@@ -393,6 +393,7 @@ function renderHeader(){
 function renderTiles(){
   $('t-alt').textContent = fmt(latest.alt_baro_m, 1);
   $('t-vel').textContent = fmt(latest.vel_up_ms, 1);
+  $('t-temp').textContent = fmt(latest.temp_c, 1);   // baro die temp; fc only
 
   const v = latest.batt_v;
   const bv = $('t-batt'), bs = $('t-batt-sub');

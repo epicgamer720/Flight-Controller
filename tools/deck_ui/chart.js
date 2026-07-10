@@ -331,6 +331,8 @@ class CanvasChart {
 
     /* series, clipped to the plot area (null cells are skipped) */
     let anyStroke = false;
+    const endFilt = this._endFilt || (this._endFilt = []);
+    endFilt.length = 0;
     ctx.save();
     ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
     ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -353,6 +355,7 @@ class CanvasChart {
           const v = rv * o.scale;
           ema = (ema === ema) ? ema + FILT.alpha * (v - ema) : v;
           if (i >= iStart) f.push(rows[i][0], ema);
+          if (i < iEnd) endFilt[s] = ema;   // filtered value at the end dot
         }
         if (FILT.ghost){
           ctx.globalAlpha = 0.25;
@@ -364,15 +367,18 @@ class CanvasChart {
         anyStroke = strokePts(ctx, raw, X, Y, t0, span, pw) || anyStroke;
       }
     }
-    /* end dots on the newest visible non-null sample per series */
+    /* end dots on the newest visible non-null sample per series — on the
+     * FILTERED line when the display filter is active */
     if (nVis > 0){
       for (let s = 0; s < o.cols.length; s++){
         for (let i = iEnd - 1; i >= i0; i--){
           const v = rows[i][o.cols[s]];
           if (v === null || v === undefined) continue;
+          const y = (FILT.alpha > 0 && endFilt[s] !== undefined)
+            ? endFilt[s] : v * o.scale;
           ctx.fillStyle = THEME.series[s];
           ctx.beginPath();
-          ctx.arc(X(rows[i][0]), Y(v * o.scale), 3, 0, 6.2832);
+          ctx.arc(X(rows[i][0]), Y(y), 3, 0, 6.2832);
           ctx.fill();
           break;
         }
