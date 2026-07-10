@@ -4,13 +4,15 @@
  * the actual jump happens in SystemInit() with the chip in clean
  * reset state — a direct jump from a running system leaves enough
  * peripheral state behind to wedge the ROM's USB enumeration
- * (observed on this board). Marker lives at 0x2000FFF8: above
- * .data/.bss (~22 KB), far below the initial stack (top of RAM),
- * and RAM is retained across NVIC_SystemReset.
+ * (observed on this board). Marker lives at 0x2003FFF0: the top 16
+ * bytes of RAM, reserved by the linker (RAM LENGTH = 256K - 16, so
+ * _estack = 0x2003FFF0) — no section or stack can ever reach it,
+ * and RAM is retained across NVIC_SystemReset. Address must match
+ * SystemInit() in Core/Src/system_stm32f7xx.c.
  * ============================================================ */
 #include "app.h"
 
-#define DFU_MAGIC_ADDR  ((volatile uint32_t *)0x2000FFF8UL)
+#define DFU_MAGIC_ADDR  ((volatile uint32_t *)0x2003FFF0UL)
 #define DFU_MAGIC_VAL   0xDEADBEEFUL
 
 void dfu_enter_bootloader(void)

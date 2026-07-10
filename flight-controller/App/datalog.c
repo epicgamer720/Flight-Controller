@@ -20,8 +20,8 @@
 #include <stdio.h>
 
 #define REC_SZ          sizeof(log_record_t)                 /* 68 */
-#define RING_CAP        ((LOG_RING_BYTES / REC_SZ) * REC_SZ) /* 8160: whole records */
-#define LOG_CHUNK_BYTES (30U * REC_SZ)                       /* 2040 ~= 4 SD sectors */
+#define RING_CAP        ((LOG_RING_BYTES / REC_SZ) * REC_SZ) /* 65484: whole records */
+#define LOG_CHUNK_BYTES (60U * REC_SZ)                       /* 4080 ~= 8 SD sectors */
 
 static FATFS    s_fs;
 static FIL      s_bin, s_txt;
@@ -32,6 +32,7 @@ static bool     s_bin_open = false;
 static bool     s_txt_open = false;
 static bool     s_dirty    = false;   /* unsynced data in LOGnnn.BIN */
 static uint32_t s_drops    = 0;       /* records lost to ring overflow */
+static uint32_t s_hw_used  = 0;       /* ring occupancy high-water, bytes */
 static uint32_t s_last_write_ms, s_last_sync_ms;
 
 /* SPSC byte ring: producer datalog_push (control loop), consumer
@@ -74,6 +75,7 @@ int datalog_init(void)
   s_dirty = false;
   s_head = s_tail = 0;
   s_drops = 0;
+  s_hw_used = 0;
 
   /* Card detect: internal pull-up, switch to GND when inserted -> HIGH = no card. */
   if (HAL_GPIO_ReadPin(SD_CD_PORT, SD_CD_PIN) == GPIO_PIN_SET)
@@ -146,6 +148,10 @@ void datalog_push(const log_record_t *r)
    * never wraps; single contiguous copy. */
   memcpy(&s_ring[s_head % RING_CAP], &rec, REC_SZ);
   s_head += REC_SZ;
+
+  uint32_t occ = s_head - s_tail;       /* occupancy high-water for log stat */
+  if (occ > s_hw_used)
+    s_hw_used = occ;
 }
 
 void datalog_poll(uint32_t now_ms)
@@ -269,4 +275,14 @@ void datalog_close(void)
 bool datalog_ok(void)
 {
   return s_sd_ok;
+}
+
+void datalog_stats(uint32_t *drops, uint32_t *hw_bytes, uint32_t *cap_bytes)
+{
+  if (drops != NULL)
+    *drops = s_drops;
+  if (hw_bytes != NULL)
+    *hw_bytes = s_hw_used;
+  if (cap_bytes != NULL)
+    *cap_bytes = RING_CAP;
 }

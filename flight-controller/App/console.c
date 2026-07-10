@@ -413,7 +413,11 @@ static void cmd_log(int argc, char **argv)
   }
   if (strcmp(argv[1], "stat") == 0)
   {
+    uint32_t drops, hw, cap;
     console_printf("log: %s\r\n", datalog_ok() ? "running" : "not running");
+    datalog_stats(&drops, &hw, &cap);
+    console_printf("  drops: %lu  ring high-water: %lu/%lu bytes\r\n",
+                   (unsigned long)drops, (unsigned long)hw, (unsigned long)cap);
   }
   else if (strcmp(argv[1], "start") == 0)
   {

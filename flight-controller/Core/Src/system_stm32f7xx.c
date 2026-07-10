@@ -154,9 +154,11 @@ void SystemInit(void)
    * reset, jump to the ROM bootloader NOW, while the chip is still in
    * reset state (clocks HSI, no peripherals touched) — a direct jump from
    * a running system wedges the ROM's USB init. Runs before .data/.bss
-   * init, so the marker location must stay outside initialized sections. */
+   * init, so the marker location must stay outside initialized sections:
+   * 0x2003FFF0 is the 16-byte cubby above _estack reserved in the linker
+   * script (RAM LENGTH = 256K - 16). Must match App/dfu.c. */
   {
-    volatile uint32_t *dfu_magic = (volatile uint32_t *)0x2000FFF8UL;
+    volatile uint32_t *dfu_magic = (volatile uint32_t *)0x2003FFF0UL;
     if (*dfu_magic == 0xDEADBEEFUL)
     {
       *dfu_magic = 0;

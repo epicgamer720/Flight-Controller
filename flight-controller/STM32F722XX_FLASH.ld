@@ -60,10 +60,13 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Specify the memory areas.
    FLASH capped at 384K: sector 7 (0x08060000, 128K) is the param store
-   (App/param_store.c) — code overlapping it must fail at link time. */
+   (App/param_store.c) — code overlapping it must fail at link time.
+   RAM shortened by 16 bytes: 0x2003FFF0..0x2003FFFF is reserved for the
+   DFU handoff magic (App/dfu.c + SystemInit) — _estack = 0x2003FFF0, so
+   neither the stack nor any section can ever touch the marker. */
 MEMORY
 {
-RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 256K
+RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 256K - 16
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 384K
 }
 

@@ -146,6 +146,7 @@ void datalog_poll(uint32_t now_ms);       /* drain ring -> f_write, periodic f_s
 void datalog_flush(void);                 /* bounded ring drain + f_sync both files */
 void datalog_close(void);
 bool datalog_ok(void);
+void datalog_stats(uint32_t *drops, uint32_t *hw_bytes, uint32_t *cap_bytes);
 void datalog_event(const char *msg);      /* human-readable event -> LOGnnn.TXT sidecar */
 
 /* ---------------- param_store.c — flash param persistence ------------ */

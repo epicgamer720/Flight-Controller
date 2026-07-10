@@ -56,7 +56,7 @@
 /* ---- Logging ---- */
 #define LOG_RECORD_MAGIC     0xA5
 #define LOG_RATE_HZ          200
-#define LOG_RING_BYTES       8192
+#define LOG_RING_BYTES       65536   /* ~4.8 s of 200 Hz records (68 B each) */
 
 /* ---- Arming gate (per CLAUDE.md §2): ALL required ---- */
 #define ARM_MAX_VEL_MS       2.0f    /* near-zero velocity on pad */
