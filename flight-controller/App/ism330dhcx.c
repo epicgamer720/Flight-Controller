@@ -97,6 +97,22 @@ int imu_read(imu_sample_t *s)
         s_read_ok = false;
         return -2;
     }
+
+    /* A stuck bus returns HAL_OK with rail bytes. Real bursts always have
+     * structure (accel Z at rest ≈ +1 g ≈ 0x0800 LSB; gyro noise is never
+     * exactly 0 on all 12 bytes) — all-0x00 / all-0xFF is a bus fault, so
+     * count it as a failed read and keep the previous outputs. */
+    {
+        uint8_t and_all = 0xFFu, or_all = 0x00u;
+        for (i = 0; i < (int)sizeof raw; i++) {
+            and_all &= raw[i];
+            or_all  |= raw[i];
+        }
+        if ((or_all == 0x00u) || (and_all == 0xFFu)) {
+            s_read_ok = false;
+            return -3;
+        }
+    }
     s_read_ok = true;
 
     for (i = 0; i < 6; i++)

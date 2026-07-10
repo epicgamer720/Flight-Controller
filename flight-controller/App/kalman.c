@@ -8,6 +8,7 @@
  * measurement of alt with R = KAL_R_BARO, Joseph-form covariance update.
  * ============================================================ */
 #include "app.h"
+#include <math.h>
 
 #define P_INIT_ALT   1.0e4f    /* m^2   — large: state unknown at reset */
 #define P_INIT_VEL   1.0e2f    /* (m/s)^2 */
@@ -20,6 +21,7 @@ void kal_reset(kalman_t *k)
     k->P[0][0] = P_INIT_ALT; k->P[0][1] = 0.0f;
     k->P[1][0] = 0.0f;       k->P[1][1] = P_INIT_VEL;
     k->init = false;          /* first baro update seeds alt */
+    k->gate_rejects = 0;
 }
 
 void kal_predict(kalman_t *k, float accel_up_ms2, float dt, bool accel_valid)
@@ -61,12 +63,16 @@ void kal_predict(kalman_t *k, float accel_up_ms2, float dt, bool accel_valid)
 
 void kal_update_baro(kalman_t *k, float alt_m)
 {
+    if (!isfinite(alt_m))      /* never let NaN/inf into the state */
+        return;
+
     if (!k->init) {            /* seed from first measurement */
         k->alt_m  = alt_m;
         k->vel_ms = 0.0f;
         k->P[0][0] = KAL_R_BARO; k->P[0][1] = 0.0f;
         k->P[1][0] = 0.0f;       k->P[1][1] = P_INIT_VEL;
         k->init = true;
+        k->gate_rejects = 0;
         return;
     }
 
@@ -82,6 +88,18 @@ void kal_update_baro(kalman_t *k, float alt_m)
     float k1 = p10 / s;
 
     float y = alt_m - k->alt_m;
+
+    /* Innovation gate: a wild outlier (glitched conversion, vent transient)
+     * must not slam alt/vel — deploy logic keys off them. P keeps growing
+     * via predict while we reject, so the gate widens on its own; after
+     * KAL_GATE_MAX_REJECT consecutive rejections accept unconditionally so
+     * a genuine altitude step can never be locked out. */
+    if ((y * y) > (KAL_GATE_SIGMA * KAL_GATE_SIGMA) * s &&
+        k->gate_rejects < (uint16_t)KAL_GATE_MAX_REJECT) {
+        k->gate_rejects++;
+        return;
+    }
+    k->gate_rejects = 0;
     k->alt_m  += k0 * y;
     k->vel_ms += k1 * y;
 

@@ -50,6 +50,8 @@
 /* ---- Kalman (1-D altitude/velocity, baro-driven) ---- */
 #define KAL_Q_ACCEL          4.0f    /* process noise (m/s^2)^2 */
 #define KAL_R_BARO           1.5f    /* baro meas noise m^2 */
+#define KAL_GATE_SIGMA       5.0f    /* innovation gate: reject y^2 > N^2*S */
+#define KAL_GATE_MAX_REJECT  25      /* ~0.5 s at 50 Hz, then accept (real step) */
 
 /* ---- Logging ---- */
 #define LOG_RECORD_MAGIC     0xA5

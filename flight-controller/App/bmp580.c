@@ -81,8 +81,16 @@ static int fetch_sample(void)
                     ((uint32_t)d[5] << 16);
     if (praw == 0)              /* all-zero data = not a real conversion */
         return -1;
-    s_temp_c   = (float)traw / 65536.0f;
-    s_press_pa = (float)praw / 64.0f;
+    float temp_c   = (float)traw / 65536.0f;
+    float press_pa = (float)praw / 64.0f;
+    /* Plausibility gate: a stuck bus or corrupt burst must read as a
+     * failed sample, not poison the altitude filter. 30–110 kPa covers
+     * ~-650 m to ~9 km MSL; temp range is the sensor's rated span. */
+    if ((press_pa < 30000.0f) || (press_pa > 110000.0f) ||
+        (temp_c < -40.0f) || (temp_c > 85.0f))
+        return -1;
+    s_temp_c    = temp_c;
+    s_press_pa  = press_pa;
     s_have_data = true;
     s_fresh_ms  = HAL_GetTick();
     return 0;

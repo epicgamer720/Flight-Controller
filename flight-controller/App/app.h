@@ -86,7 +86,8 @@ void led_set(uint8_t r, uint8_t g, uint8_t b); /* immediate bit-bang, ~30 us IRQ
 void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix); /* LED_HZ pattern */
 
 /* ---------------- kalman.c — 1-D alt/vel filter ---------------- */
-typedef struct { float alt_m, vel_ms; float P[2][2]; bool init; } kalman_t;
+typedef struct { float alt_m, vel_ms; float P[2][2]; bool init;
+                 uint16_t gate_rejects; /* consecutive gated baro updates */ } kalman_t;
 void kal_reset(kalman_t *k);
 void kal_predict(kalman_t *k, float accel_up_ms2, float dt, bool accel_valid);
 void kal_update_baro(kalman_t *k, float alt_m);
