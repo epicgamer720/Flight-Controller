@@ -76,6 +76,8 @@ FLAG_GPS_FIX = 1 << 0
 FLAG_ACCEL_SAT = 1 << 1
 FLAG_ARMED = 1 << 2
 FLAG_SD_OK = 1 << 3
+FLAG_CHG_OK = 1 << 4
+FLAG_GPS_OK = 1 << 5
 
 # ---- struct layouts ----
 TELEM_STRUCT = struct.Struct("<BBBBIiiiih3h3hHBBBBH")
@@ -171,6 +173,8 @@ def parse_telem(buf):
         "accel_sat": bool(flags & FLAG_ACCEL_SAT),
         "armed": bool(flags & FLAG_ARMED),
         "sd_ok": bool(flags & FLAG_SD_OK),
+        "chg_ok": bool(flags & FLAG_CHG_OK),
+        "gps_ok": bool(flags & FLAG_GPS_OK),
     }
 
 

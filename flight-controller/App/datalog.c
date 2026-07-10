@@ -186,6 +186,17 @@ void datalog_poll(uint32_t now_ms)
       s_dirty = false;
     }
   }
+
+  /* Rebase the free-running indices long before uint32 wrap: 2^32 is not
+   * a multiple of RING_CAP, so wrapping would break record alignment
+   * (~87 h of continuous logging). k is a RING_CAP multiple, so every
+   * offset (idx % RING_CAP) is preserved. Producer and consumer both run
+   * in the superloop thread — safe to adjust both here. */
+  if (s_tail >= 0x40000000u) {
+    uint32_t k = (s_tail / RING_CAP) * RING_CAP;
+    s_head -= k;
+    s_tail -= k;
+  }
 }
 
 /* FAULT-entry flush (CLAUDE.md §5.4 keeps logging in FAULT — files stay

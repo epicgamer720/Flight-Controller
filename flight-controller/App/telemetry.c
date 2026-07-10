@@ -102,18 +102,20 @@ void telem_build(telem_packet_t *p)
     p->crc16 = crc16_ccitt((const uint8_t *)p, sizeof *p - 2);
 }
 
-static void send_packet_type(uint8_t type, uint8_t state_field)
+static int send_packet_type(uint8_t type, uint8_t state_field)
 {
     telem_packet_t p;
     telem_build(&p);
     p.type  = type;
     p.state = state_field;
     p.crc16 = crc16_ccitt((const uint8_t *)&p, sizeof p - 2);
-    if (radio_send((const uint8_t *)&p, sizeof p) == 0) {
+    s_rx_open = false;   /* radio_send SET_STANDBYs — RX window dies even on failure */
+    int rc = radio_send((const uint8_t *)&p, sizeof p);
+    if (rc == 0) {
         s_tx_pending = true;
-        s_rx_open    = false;
         s_last_tx_ms = HAL_GetTick();
     }
+    return rc;
 }
 
 void telem_event(uint8_t event_state)
@@ -178,12 +180,16 @@ static void handle_command(const uint8_t *buf, int len)
         break;
     case CMD_SET_MAIN_ALT: {
         float m = (float)c.arg / 100.0f;     /* arg is cm */
-        if (m >= 30.0f && m <= 2000.0f) {
-            g_fsm.main_alt_m = m;
-            (void)param_save(c.arg);         /* best-effort persist; the gate
-                                                inside refuses non-ground states */
-        } else {
+        /* Refused while ARMED: deploy params must not change on an armed
+         * vehicle, and the flash persist is state-gated off then anyway —
+         * a RAM-only change ACKed as success would silently revert on
+         * reboot. NAK also if the ground-state persist itself fails. */
+        if (g_fsm.armed || m < 30.0f || m > 2000.0f) {
             ack = false;
+        } else {
+            g_fsm.main_alt_m = m;
+            if (param_save(c.arg) != 0)
+                ack = false;                 /* applied to RAM, not persisted */
         }
         break;
     }
@@ -264,15 +270,21 @@ void telem_poll(uint32_t now_ms)
     }
 
     /* Queued PKT_EVENTs drain first (at most one per poll) so state
-     * transitions / pyro actions are never starved by cadence frames. */
+     * transitions / pyro actions are never starved by cadence frames.
+     * Peek-then-advance: a transient radio_send failure keeps the event
+     * queued for retry; a few consecutive failures drop it so a half-dead
+     * radio cannot starve cadence frames forever (SD log has it anyway). */
     if (!s_tx_pending && s_evq_head != s_evq_tail) {
+        static uint8_t tries;
         uint8_t ev = s_evq[s_evq_tail % EVQ_LEN];
-        s_evq_tail++;
-        send_packet_type(PKT_EVENT, ev);
+        if (send_packet_type(PKT_EVENT, ev) == 0 || ++tries > 3u) {
+            s_evq_tail++;
+            tries = 0;
+        }
         return;
     }
 
     /* Cadenced telemetry frame. */
     if (!s_tx_pending && (now_ms - s_last_tx_ms) >= period_ms())
-        send_packet_type(PKT_TELEMETRY, (uint8_t)g_fsm.state);
+        (void)send_packet_type(PKT_TELEMETRY, (uint8_t)g_fsm.state);
 }

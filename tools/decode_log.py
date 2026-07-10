@@ -56,10 +56,12 @@ FLAG_GPS_FIX = 1 << 0
 FLAG_ACCEL_SAT = 1 << 1
 FLAG_ARMED = 1 << 2
 FLAG_SD_OK = 1 << 3
+FLAG_CHG_OK = 1 << 4
+FLAG_GPS_OK = 1 << 5
 
 CSV_HEADER = [
     "rec", "t_ms", "t_s", "state", "state_name",
-    "flags_hex", "gps_fix", "accel_sat", "armed", "sd_ok",
+    "flags_hex", "gps_fix", "accel_sat", "armed", "sd_ok", "chg_ok", "gps_ok",
     "ax_g", "ay_g", "az_g",
     "gx_dps", "gy_dps", "gz_dps",
     "press_pa", "temp_c", "agl_m", "vel_ms",
@@ -137,6 +139,7 @@ def decode(blob, writer):
             state, state_name(state),
             "0x%04X" % flags,
             (flags >> 0) & 1, (flags >> 1) & 1, (flags >> 2) & 1, (flags >> 3) & 1,
+            (flags >> 4) & 1, (flags >> 5) & 1,
             "%.4f" % ax, "%.4f" % ay, "%.4f" % az,
             "%.3f" % gx, "%.3f" % gy, "%.3f" % gz,
             "%.2f" % press_pa, "%.2f" % temp_c,
