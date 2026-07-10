@@ -366,6 +366,10 @@ class Source:
         with self._lock:
             self._push_event_locked(kind, text, t_host, t_ms, severity)
 
+    def push_event(self, kind, text, severity="info"):
+        """Public event injection (command adapters, recorder, server)."""
+        self._event(kind, text, self.now(), severity=severity)
+
     # -- consumer API --
     def drain(self, since=-1.0, event_seq=-1):
         """Incremental snapshot: series rows with t_host > since, the full
@@ -393,13 +397,26 @@ class _JsonLineSource(Source):
     def __init__(self):
         super().__init__()
         self.ingest = LineIngest()
+        self.listeners = []      # callables (kind, obj, t_host) — called
+                                 # OUTSIDE the store lock (command adapters)
         self._last_t_ms = None
         self._prev_state = None
         self._prev_fired = None
         self._arrivals = deque()
         self._last_frame_t = None
 
+    def _notify(self, kind, obj, t_host):
+        for fn in list(self.listeners):
+            try:
+                fn(kind, obj, t_host)
+            except Exception:
+                pass                 # a broken listener must not kill ingest
+
     def _ingest_gs(self, kind, obj, t_host):
+        self._ingest_gs_inner(kind, obj, t_host)
+        self._notify(kind, obj, t_host)
+
+    def _ingest_gs_inner(self, kind, obj, t_host):
         if kind == "junk":
             with self._lock:
                 self._counters["junk"] = self.ingest.junk
@@ -623,6 +640,20 @@ class GsJsonSource(_JsonLineSource):
         self.com = com
         self._port = None
         self._rxbuf = b""
+        self._txlock = threading.Lock()
+
+    def send_line(self, line):
+        """Write one stdin command line to the GS bridge. Returns False
+        when the port is down (caller surfaces the failure)."""
+        with self._txlock:
+            p = self._port
+            if p is None:
+                return False
+            try:
+                p.write((line.rstrip("\r\n") + "\n").encode())
+                return True
+            except Exception:
+                return False
 
     def _open(self):
         import serial   # lazy: importable without pyserial installed
