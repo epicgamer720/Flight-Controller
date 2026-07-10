@@ -116,6 +116,7 @@ void telem_init(void);
 void telem_poll(uint32_t now_ms);         /* cadence TX, pad RX windows, command handling */
 void telem_build(telem_packet_t *p);      /* fill from g_fsm + CRC */
 void telem_event(uint8_t event_state);    /* PKT_EVENT on transitions/pyro */
+void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts);
 
 /* ---------------- datalog.c — SD binary logging ---------------- */
 /* 68-byte fixed records -> LOGnnn.BIN via FatFs; ring buffer decouples the

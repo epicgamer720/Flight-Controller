@@ -15,6 +15,9 @@ static bool     s_tx_pending;       /* radio_send issued, TxDone not seen  */
 static bool     s_rx_open;          /* pad RX window currently armed       */
 static uint32_t s_nonce[NONCE_HIST];
 static uint8_t  s_nonce_idx;
+static uint32_t s_last_reinit_ms;   /* pacing for on-ground radio re-init  */
+static uint32_t s_reinit_attempts;
+static uint32_t s_tx_timeouts;      /* stuck-TX force-clears (lost TxDone) */
 
 void telem_init(void)
 {
@@ -23,6 +26,15 @@ void telem_init(void)
     s_rx_open    = false;
     s_nonce_idx  = 0;
     memset(s_nonce, 0, sizeof s_nonce);
+    s_last_reinit_ms  = 0;
+    s_reinit_attempts = 0;
+    s_tx_timeouts     = 0;
+}
+
+void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts)
+{
+    if (tx_timeouts)     *tx_timeouts     = s_tx_timeouts;
+    if (reinit_attempts) *reinit_attempts = s_reinit_attempts;
 }
 
 static bool on_pad(void)
@@ -186,8 +198,33 @@ static void handle_command(const uint8_t *buf, int len)
 void telem_poll(uint32_t now_ms)
 {
     g_fsm.radio_ok = radio_ok();
-    if (!g_fsm.radio_ok)
-        return;
+    if (!g_fsm.radio_ok) {
+        /* Dead radio: retry init periodically so a transient fault (or a
+         * hardware fix) recovers without a reboot. GROUND STATES ONLY —
+         * radio_init() blocks ~250 ms, longer than the 150 ms launch
+         * debounce, so it must never run in ST_ARMED or any flight state. */
+        if ((g_fsm.state == ST_INIT || g_fsm.state == ST_GROUND_IDLE ||
+             g_fsm.state == ST_LANDED) &&
+            (now_ms - s_last_reinit_ms) >= RADIO_REINIT_PERIOD_MS) {
+            s_last_reinit_ms = now_ms;
+            s_reinit_attempts++;
+            if (radio_init() == 0) {
+                s_tx_pending = false;      /* stale pre-failure state */
+                s_rx_open    = false;
+                g_fsm.radio_ok = radio_ok();
+                datalog_event("RADIO REINIT OK");
+            }
+        }
+        if (!g_fsm.radio_ok)
+            return;
+    }
+
+    /* TX watchdog: a lost TxDone must not wedge the link forever. */
+    if (s_tx_pending && (now_ms - s_last_tx_ms) >= TELEM_TX_TIMEOUT_MS) {
+        s_tx_pending = false;              /* next send re-enters STANDBY */
+        s_tx_timeouts++;
+        datalog_event("TELEM TX TIMEOUT");
+    }
 
     /* TX completion -> on pad, open the single RX window. */
     if (s_tx_pending && radio_tx_done()) {

@@ -143,27 +143,33 @@ static bool bus_busy(void)
 }
 
 /* Read+clear IRQ status, latch flags/packet. Runs in the EXTI ISR when
- * the bus is free, or deferred to main context via s_irq_pend. */
+ * the bus is free, or deferred to main context via s_irq_pend.
+ * Any failure DEFERS (s_irq_pend) instead of dropping: sx_cmd can lose
+ * the bus_lock race against a main-context transaction that has locked
+ * but not yet pulled CS low, and DIO1 is edge-triggered — a dropped
+ * service here would never re-fire and the TxDone/RxDone would be lost. */
 static void radio_service(void)
 {
     uint16_t irq;
     uint8_t  guard = 0;
 
     do {
-        if (sx_get_irq(&irq) < 0) return;
-        if (sx_clear_irq(irq) < 0) return;
+        if (sx_get_irq(&irq) < 0)  { s_irq_pend = true; return; }
+        if (sx_clear_irq(irq) < 0) { s_irq_pend = true; return; }
 
         if (irq & IRQ_TX_DONE)
             s_tx_done = true;
 
         if ((irq & IRQ_RX_DONE) && !(irq & (IRQ_CRC_ERR | IRQ_HEADER_ERR))) {
             uint8_t tx[4] = { OP_GET_RX_BUF_STATUS, 0, 0, 0 }, rx[4] = {0};
-            if (sx_cmd(tx, rx, 4) < 0) return;
+            if (sx_cmd(tx, rx, 4) < 0) { s_irq_pend = true; return; }
             uint8_t len = rx[2], off = rx[3];
             if (len > 0) {
                 uint8_t hdr[3] = { OP_READ_BUFFER, off, 0x00 };
-                if (sx_cmd2(hdr, 3, s_zeros, (uint8_t *)s_rx_buf, len) < 0)
+                if (sx_cmd2(hdr, 3, s_zeros, (uint8_t *)s_rx_buf, len) < 0) {
+                    s_irq_pend = true;
                     return;
+                }
                 s_rx_len   = len;   /* set len before ready flag */
                 s_rx_ready = true;
             }
@@ -172,10 +178,15 @@ static void radio_service(void)
     } while ((LORA_IRQ_PORT->IDR & LORA_IRQ_PIN) && ++guard < 3);
 }
 
-/* Process an IRQ that the ISR had to defer (bus was busy). Main ctx. */
+/* Process an IRQ that the ISR had to defer (bus was busy). Main ctx.
+ * Also catches a lost edge outright: DIO1 is a LEVEL until the IRQ
+ * status is cleared, so a high pin with no pending flag still means
+ * there is unserviced radio work. */
 static void service_pending(void)
 {
-    if (s_irq_pend && s_ok && !bus_busy()) {
+    if (!s_ok || bus_busy())
+        return;
+    if (s_irq_pend || (LORA_IRQ_PORT->IDR & LORA_IRQ_PIN)) {
         s_irq_pend = false;
         radio_service();
     }

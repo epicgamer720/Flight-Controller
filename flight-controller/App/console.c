@@ -438,6 +438,12 @@ static void cmd_radio(int argc, char **argv)
                  radio_using_tcxo() ? "yes" : "no (xtal fallback)");
   console_printf("  init err: tcxo=%d xtal=%d (0=ok; -1 rst/busy, -3 no chip, -7/-21 dev errors)\r\n",
                  et, ex);
+  {
+    uint32_t txto, reinit;
+    telem_debug(&txto, &reinit);
+    console_printf("  reinit attempts: %lu  tx timeouts: %lu\r\n",
+                   (unsigned long)reinit, (unsigned long)txto);
+  }
   console_printf("  BUSY pin: %d  DIO1 pin: %d\r\n",
                  (LORA_BUSY_PORT->IDR & LORA_BUSY_PIN) ? 1 : 0,
                  (LORA_IRQ_PORT->IDR & LORA_IRQ_PIN) ? 1 : 0);
