@@ -182,6 +182,34 @@ void datalog_poll(uint32_t now_ms)
   }
 }
 
+/* FAULT-entry flush (CLAUDE.md §5.4 keeps logging in FAULT — files stay
+ * OPEN; close happens on LANDED only). Bounded drain: at most 4 chunks so
+ * a slow card cannot stall the control loop, then f_sync BOTH files so
+ * everything already written survives a power loss. */
+void datalog_flush(void)
+{
+  if (!s_sd_ok)
+    return;
+
+  if (s_bin_open) {
+    for (int chunks = 0; chunks < 4; chunks++) {
+      if (dl_write_chunk() <= 0)
+        break;                          /* ring empty, or error (sd_ok cleared) */
+    }
+    if (!s_sd_ok)
+      return;
+    if (f_sync(&s_bin) != FR_OK) {
+      dl_fail();
+      return;
+    }
+    s_dirty = false;
+  }
+  if (s_txt_open) {
+    if (f_sync(&s_txt) != FR_OK)
+      dl_fail();
+  }
+}
+
 void datalog_event(const char *msg)
 {
   if (!s_sd_ok || !s_txt_open || msg == NULL)

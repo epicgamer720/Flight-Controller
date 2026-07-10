@@ -44,6 +44,8 @@ typedef enum {
 #define FLAG_ACCEL_SAT (1u<<1)
 #define FLAG_ARMED     (1u<<2)
 #define FLAG_SD_OK     (1u<<3)
+#define FLAG_CHG_OK    (1u<<4)   /* charger init healthy (BQ25883) */
+#define FLAG_GPS_OK    (1u<<5)   /* GPS UART init healthy (module may still lack fix) */
 
 typedef struct __attribute__((packed)) {
     uint8_t  magic;          /* LINK_MAGIC */

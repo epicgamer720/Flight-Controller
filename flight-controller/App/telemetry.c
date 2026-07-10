@@ -9,6 +9,7 @@
 #include <string.h>
 
 #define NONCE_HIST 8
+#define EVQ_LEN    8                /* PKT_EVENT queue depth (drop-oldest) */
 
 static uint32_t s_last_tx_ms;
 static bool     s_tx_pending;       /* radio_send issued, TxDone not seen  */
@@ -18,6 +19,11 @@ static uint8_t  s_nonce_idx;
 static uint32_t s_last_reinit_ms;   /* pacing for on-ground radio re-init  */
 static uint32_t s_reinit_attempts;
 static uint32_t s_tx_timeouts;      /* stuck-TX force-clears (lost TxDone) */
+
+/* Pending PKT_EVENT states. Free-running uint8_t indices (EVQ_LEN divides
+ * 256); telem_poll drains at most one per pass, ahead of cadence frames. */
+static uint8_t  s_evq[EVQ_LEN];
+static uint8_t  s_evq_head, s_evq_tail;
 
 void telem_init(void)
 {
@@ -29,6 +35,7 @@ void telem_init(void)
     s_last_reinit_ms  = 0;
     s_reinit_attempts = 0;
     s_tx_timeouts     = 0;
+    s_evq_head = s_evq_tail = 0;
 }
 
 void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts)
@@ -89,7 +96,9 @@ void telem_build(telem_packet_t *p)
     p->flags      = (uint8_t)((g_fsm.gps.fix       ? FLAG_GPS_FIX   : 0) |
                               (g_fsm.imu.accel_sat ? FLAG_ACCEL_SAT : 0) |
                               (g_fsm.armed         ? FLAG_ARMED     : 0) |
-                              (g_fsm.sd_ok         ? FLAG_SD_OK     : 0));
+                              (g_fsm.sd_ok         ? FLAG_SD_OK     : 0) |
+                              (g_fsm.chg_ok        ? FLAG_CHG_OK    : 0) |
+                              (g_fsm.gps_ok        ? FLAG_GPS_OK    : 0));
     p->crc16 = crc16_ccitt((const uint8_t *)p, sizeof *p - 2);
 }
 
@@ -111,9 +120,13 @@ void telem_event(uint8_t event_state)
 {
     /* Always into the on-board log (works with no radio/GS in range)... */
     datalog_event(fsm_state_name((flight_state_t)event_state));
-    /* ...and best-effort immediate PKT_EVENT downlink. */
-    if (g_fsm.radio_ok && !s_tx_pending)
-        send_packet_type(PKT_EVENT, event_state);
+    /* ...and queue the PKT_EVENT downlink (drop-oldest when full). The
+     * packet is built at drain time so it carries the pyro_fired /
+     * continuity bits current at TX, not at enqueue. */
+    if ((uint8_t)(s_evq_head - s_evq_tail) >= EVQ_LEN)
+        s_evq_tail++;                            /* drop-oldest */
+    s_evq[s_evq_head % EVQ_LEN] = event_state;
+    s_evq_head++;
 }
 
 static bool nonce_fresh(uint32_t n)
@@ -157,8 +170,10 @@ static void handle_command(const uint8_t *buf, int len)
             (c.arg >> 16) == TEST_FIRE_PASSCODE &&
             (c.arg & 0xFFFFu) < NUM_PYRO) {
             ack = (pyro_fire((uint8_t)(c.arg & 0xFFFFu)) == 0);
-            if (ack)
+            if (ack) {
                 datalog_event("TEST FIRE (radio)");
+                telem_event((uint8_t)g_fsm.state); /* post-decision: PKT_EVENT carries fired bits */
+            }
         }
         break;
     case CMD_SET_MAIN_ALT: {
@@ -243,6 +258,15 @@ void telem_poll(uint32_t now_ms)
             s_rx_open = false;
             handle_command(buf, n);
         }
+    }
+
+    /* Queued PKT_EVENTs drain first (at most one per poll) so state
+     * transitions / pyro actions are never starved by cadence frames. */
+    if (!s_tx_pending && s_evq_head != s_evq_tail) {
+        uint8_t ev = s_evq[s_evq_tail % EVQ_LEN];
+        s_evq_tail++;
+        send_packet_type(PKT_EVENT, ev);
+        return;
     }
 
     /* Cadenced telemetry frame. */

@@ -66,6 +66,7 @@ static void fsm_fault(const char *why)
         return;
     g_fsm.armed = false;            /* safe pyros: pyro_fire ignores !armed */
     datalog_event(why);
+    datalog_flush();                /* bounded drain + sync — FAULT may precede power loss */
     fsm_set_state(ST_FAULT);        /* logging + telemetry keep running */
 }
 

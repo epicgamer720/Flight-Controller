@@ -58,6 +58,8 @@ void app_init(void)
     g_fsm.baro_ok  = (rc_baro == 0);
     g_fsm.sd_ok    = (rc_sd == 0) && datalog_ok();
     g_fsm.radio_ok = (rc_radio == 0) && radio_ok();
+    g_fsm.chg_ok   = (rc_chg == 0);
+    g_fsm.gps_ok   = (rc_gps == 0);
 
     /* IWDG after every slow init above: LSI 32 kHz nominal (up to ~47 kHz
      * spec) / 32 with full reload = ~4.1 s nominal, ~2.8 s worst case.
@@ -106,7 +108,9 @@ static void push_log_record(uint32_t now_ms)
     r.flags      = (uint16_t)((g_fsm.gps.fix       ? FLAG_GPS_FIX   : 0) |
                               (g_fsm.imu.accel_sat ? FLAG_ACCEL_SAT : 0) |
                               (g_fsm.armed         ? FLAG_ARMED     : 0) |
-                              (g_fsm.sd_ok         ? FLAG_SD_OK     : 0));
+                              (g_fsm.sd_ok         ? FLAG_SD_OK     : 0) |
+                              (g_fsm.chg_ok        ? FLAG_CHG_OK    : 0) |
+                              (g_fsm.gps_ok        ? FLAG_GPS_OK    : 0));
     r.t_ms       = now_ms;
     r.ax_g       = g_fsm.imu.ax;
     r.ay_g       = g_fsm.imu.ay;

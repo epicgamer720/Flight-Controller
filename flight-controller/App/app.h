@@ -104,6 +104,7 @@ typedef struct {
     charger_status_t chg;
     float    press_pa, temp_c;
     bool     imu_ok, baro_ok, sd_ok, radio_ok;
+    bool     chg_ok, gps_ok;         /* init-time health (charger / GPS UART) */
 } fsm_t;
 extern fsm_t g_fsm;
 void fsm_init(void);
@@ -121,7 +122,8 @@ void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts);
 
 /* ---------------- datalog.c — SD binary logging ---------------- */
 /* 68-byte fixed records -> LOGnnn.BIN via FatFs; ring buffer decouples the
- * control loop from SD latency; flush LOG_FLUSH_MS; close on LANDED/FAULT. */
+ * control loop from SD latency; flush LOG_FLUSH_MS; close on LANDED,
+ * flush (bounded drain + sync, files stay open) on FAULT. */
 typedef struct __attribute__((packed)) {
     uint8_t  magic;              /* LOG_RECORD_MAGIC */
     uint8_t  state;
@@ -141,6 +143,7 @@ _Static_assert(sizeof(log_record_t) == 68, "log record must be 68 bytes");
 int  datalog_init(void);                  /* mount, open next LOGnnn.BIN */
 void datalog_push(const log_record_t *r); /* from control loop, never blocks */
 void datalog_poll(uint32_t now_ms);       /* drain ring -> f_write, periodic f_sync */
+void datalog_flush(void);                 /* bounded ring drain + f_sync both files */
 void datalog_close(void);
 bool datalog_ok(void);
 void datalog_event(const char *msg);      /* human-readable event -> LOGnnn.TXT sidecar */

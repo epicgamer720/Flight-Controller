@@ -180,6 +180,8 @@ static void cmd_help(int argc, char **argv)
     "  log <stat|start|stop>   SD logging\r\n"
     "  cal                     start pad gyro bias cal\r\n"
     "  radio                   radio health\r\n"
+    "  radiodbg                raw SX1262 hardware probe\r\n"
+    "  i2cscan                 scan I2C bus for devices\r\n"
     "  charge                  charger status\r\n"
     "  bootloader              reboot into USB DFU\r\n"
     "  reboot                  reset MCU\r\n"
@@ -198,8 +200,9 @@ static void cmd_status(int argc, char **argv)
   console_printf("batt:    %u mV\r\n", g_fsm.chg.vbat_mv);
   console_printf("flags:   gps_fix=%d accel_sat=%d\r\n",
                  g_fsm.gps.fix, g_fsm.imu.accel_sat);
-  console_printf("health:  imu=%d baro=%d sd=%d radio=%d\r\n",
-                 g_fsm.imu_ok, g_fsm.baro_ok, g_fsm.sd_ok, g_fsm.radio_ok);
+  console_printf("health:  imu=%d baro=%d sd=%d radio=%d chg=%d gps=%d\r\n",
+                 g_fsm.imu_ok, g_fsm.baro_ok, g_fsm.sd_ok, g_fsm.radio_ok,
+                 g_fsm.chg_ok, g_fsm.gps_ok);
   console_printf("pyro:    cont=0x%02X fired=0x%02X sense=%u mV\r\n",
                  pyro_cont_bits(), pyro_fired_bits(), pyro_sense_mv(0));
 }
@@ -356,6 +359,7 @@ static void cmd_fire(int argc, char **argv)
   if (pyro_fire((uint8_t)(ch - 1U)) == 0)
   {
     console_printf("fire pulse started (%d ms)\r\n", FIRE_PULSE_MS);
+    telem_event((uint8_t)g_fsm.state);  /* post-decision: PKT_EVENT carries fired bits */
   }
   else
   {
