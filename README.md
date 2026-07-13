@@ -1,6 +1,6 @@
 # Rocket Flight Controller
 
-A custom, open-source flight computer for model and high-power rockets — STM32F722 (Cortex-M7) with onboard IMU, barometer, GPS, dual pyro channels, quad servo outputs, and microSD logging. Designed from scratch in KiCad.
+A custom, open-source flight computer for model and high-power rockets — STM32F722 (Cortex-M7) with onboard IMU, barometer, GPS, pyro deployment, quad servo outputs, and microSD logging. Designed from scratch in KiCad.
 
 
 
@@ -10,7 +10,7 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 
 ## Use cases
 
-- **Dual-deploy recovery** — fire a drogue at apogee and main at a set altitude using the two pyro channels.
+- **Dual-deploy recovery** — pyro drogue at apogee, then a servo mechanically releases the main at a set altitude. (This rev routes one pyro channel; the servo is the second deploy.)
 - **Active stabilization** — drive the four servo outputs for thrust-vector control or canard/fin steering during boost.
 - **Flight data logging** — log IMU, barometer, and GPS to microSD for post-flight analysis (apogee, max velocity, flight path).
 - **GPS tracking** — downrange tracking and finding the rocket after landing.
@@ -31,22 +31,49 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 | IMU | ISM330DHCX — 6-axis accel (±16 g) + gyro, SPI (built rev; early docs said ICM-45686) |
 | Barometer | BMP580 — altitude / apogee detection (I²C) |
 | Storage | microSD (SDMMC1, 4-bit) — 200 Hz binary flight log |
-| Recovery | pyro channels — 2 designed, 1 routed on this rev (gate PB13, continuity sense) |
-| Control | 4× servo outputs (TIM2) — TVC / fin / canard |
+| Recovery | 1 pyro channel (gate PB13, continuity sense PC1) + servo main-release — dual-deploy without a 2nd pyro (2 designed) |
+| Control | 4× servo outputs (TIM2) — TVC / fin / canard; one doubles as the main-release |
 | GPS | NMEA module on USART6, JST-GH + PRTR5V0U2X ESD protection |
-| Telemetry | LoRa Wio-SX1262 (915 MHz, TCXO) — live downlink verified on hardware |
+| Telemetry | LoRa Wio-SX1262 (915 MHz, TCXO) — live downlink + over-air TX-power control, verified on hardware |
 | Power | 2S LiPo, BQ25883 charger, USB-C |
 | Status | WS2812 RGB status LED |
 
 ## Bench status (July 2026)
 
 All subsystems green on hardware: IMU, barometer, SD logging, LoRa radio
-(TCXO confirmed, telemetry transmitting), charger, GPS UART. Firmware is
-hardened for flight: IWDG watchdog with reset-cause logging, Kalman
-altitude filter with outlier gating, pad-drift baro tracking, flash-persisted
-main-deploy altitude, 64 KB log ring, interlocked pad-only test-fire, and a
-full host-side test suite. Remaining before flight: ground-station pin map +
-build, threshold tuning to the motor/airframe, and a healthier USB cable.
+(TCXO confirmed, telemetry transmitting), charger, GPS UART. The firmware
+builds with `arm-none-eabi-gcc` (GitHub CI), has been flashed to the board,
+and passes its on-console **preflight** GO/NO-GO check — it is **bench-verified,
+not flight-tested**. The deploy-critical logic is exercised host-side by a SIL
+harness (a faithful Python transcription of the state machine / Kalman / pyro
+paths) plus 245 stdlib-`unittest` tests, and went through several adversarial
+multi-agent review passes.
+
+Flight hardening on top of the earlier IWDG watchdog + reset-cause logging,
+Kalman altitude filter with outlier gating, and pad-drift baro tracking:
+
+- **Hardened arm gate** — refuses to arm without pyro continuity, adequate
+  battery, near-zero velocity, *and* a plausible skyward orientation
+  (`ARM_UP_AXIS`).
+- **Fault-independent backup deploy** — a backup timer fires the charge even
+  through `ST_FAULT` with dead sensors, so a sensor loss isn't a lawn-dart.
+- **Servo dual-deploy** — a main-release servo held SAFE through ascent,
+  actuated at the main-deploy altitude (no 2nd pyro needed).
+- **Flash config v2** — runtime-tunable apogee/backup timer + last-GPS-for-
+  recovery, migrating cleanly from v1.
+- **Telemetry v3** — sequence / packet-delivery ratio, last-event echo,
+  main-alt read-back, STM32 die-temp, and over-air TX-power control.
+- Gyro-cal stationarity check, IMU-freeze detection, self-healing ground
+  FAULT, failed-deploy detection, deeper anti-replay nonce window, baro
+  temperature compensation, a recovery LED strobe (WS2812), and a STOP-mode
+  low-power `sleep`.
+
+**Tune before flight** — the defaults are placeholders, not final: `ARM_UP_AXIS`
+(confirm the skyward IMU axis), the apogee/backup timer per motor (`apogee`
+console cmd), the servo endpoints, and the flight thresholds (`LAUNCH_G`,
+`MAIN_ALT`, debounces). The baro-only Kalman also lags true apogee by ~70 m in
+SIL at `KAL_Q_ACCEL=4` — a candidate to raise once real flight data exists.
+Also remaining: ground-station pin map + build, and a healthier USB cable.
 
 ## BOM
 
@@ -105,11 +132,11 @@ The flight firmware and ground tools live in this repo:
 
 | Where | What |
 |---|---|
-| [`flight-controller/`](flight-controller/) | STM32F722 flight firmware — sensors, Kalman altitude filter, flight state machine, pyro control (heavily interlocked), SD logging, LoRa telemetry, IWDG watchdog, USB console |
+| [`flight-controller/`](flight-controller/) | STM32F722 flight firmware — sensors, Kalman altitude filter, flight state machine, hardened arm gate + interlocked pyro control, fault-independent backup deploy, servo main-release, flash config v2, SD logging, LoRa telemetry v3 (die-temp + TX-power control), IWDG watchdog, USB console (`preflight`, `apogee`, `sleep`, …) |
 | [`ground-station/`](ground-station/) | RP2040 + SX1262 LoRa ground station (RadioLib sketch; pin map pending) |
 | [`shared/`](shared/) | `protocol.h` — the single source of truth for the radio link + packet formats |
-| [`tools/`](tools/) | **Flight Deck** ops dashboard, bring-up dashboard, serial monitor, log/telemetry decoders |
-| [`tests/`](tests/) | 160+ host-side unit tests (`py -m unittest discover -s tests`) |
+| [`tools/`](tools/) | **Flight Deck** ops dashboard (recovery bearing/distance, baro-vs-GPS apogee check, telemetry-loss alarm, satellite GPS ground-track, SD `.bin` replay), one-page flight report, DFU flash helper (`flash.py`), serial monitor, log/telemetry decoders (`decode_log.py --summary`) |
+| [`tests/`](tests/) | 245 host-side unit tests + a SIL flight harness (`py -m unittest discover -s tests`) |
 | [`docs/FIRMWARE.md`](docs/FIRMWARE.md) | build / flash / console / bench guide |
 | [`docs/PINMAP.md`](docs/PINMAP.md) | authoritative pin map extracted from the KiCad netlist |
 

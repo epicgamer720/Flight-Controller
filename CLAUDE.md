@@ -83,7 +83,7 @@ Half-duplex link. Scheme:
 - **Uplink commands** (arm/disarm/test-fire/config) are sent by the GS **only while the FC is on the pad / `ST_GROUND_IDLE`**, where the FC opens a short RX window between TX frames. **Once in flight the FC is TX-only** — never sacrifice telemetry for an RX window during ascent/descent.
 - Every packet is fixed-size, packed, little-endian, ends with **CRC16-CCITT** over all preceding bytes. Drop packets failing magic/version/CRC.
 
-See §7 for the exact structs. Key fields downlinked: state, `t_ms`, GPS lat/lon/alt/sats, baro AGL, vertical velocity, 3-axis accel (may be clipped), gyro, battery mV, pyro continuity + fired bitfields, status flags (gps_fix, accel_sat, armed).
+See §7 for the exact structs. Key fields downlinked: state, `t_ms`, GPS lat/lon/alt/sats, baro AGL, vertical velocity, 3-axis accel (may be clipped), gyro, battery mV, pyro continuity + fired bitfields, status flags (gps_fix, accel_sat, armed), MCU die temp, and (v3) `seq`, a last-event echo, and the configured `main_alt` read-back.
 
 ---
 
@@ -92,7 +92,7 @@ See §7 for the exact structs. Key fields downlinked: state, `t_ms`, GPS lat/lon
 ### 5.1 Toolchain, build, flash
 
 - **No SWD on this board** (PA13/PA14 unconnected). You **cannot attach a debugger.** Therefore:
-  - Implement a **USB-CDC console** (PA11/PA12 = USB_DM/DP, OTG_FS) for config, sensor dumps, and `CMD_ENTER_BOOTLOADER`.
+  - Implement a **USB-CDC console** (PA11/PA12 = USB_DM/DP, OTG_FS) for config, sensor dumps, and `CMD_ENTER_BOOTLOADER`. Notable cmds: `preflight` (GO/NO-GO checklist before arming), `apogee <ms>` (per-motor backup-deploy timer, persisted), `sleep [s]` (STOP low-power; 0/none = until RESET), plus `log`, `cal`, `wdtest`.
   - Flashing is via the **STM32 built-in USB DFU bootloader** (system memory). Enter it with BOOT0 high at reset **or** a software jump to system memory (implement `CMD_ENTER_BOOTLOADER`/console cmd → jump `0x1FF00000`). Ensure BOOT0 is accessible (jumper/test point) as a fallback.
   - Flash command:
     ```
@@ -182,7 +182,7 @@ Moved to **`ground-station/CLAUDE.md`** (loads automatically when working under 
 
 ## 7. `shared/protocol.h`
 
-The checked-in `shared/protocol.h` is the source of truth — read it directly rather than a copy here. It defines: link params (`LORA_*`, all of §3), `LINK_MAGIC`/`PROTO_VERSION`/`NUM_PYRO`, the `packet_type_t` / `flight_state_t` / `command_id_t` enums, the `FLAG_*` status bits, the packed `telem_packet_t` / `command_packet_t` structs, and `crc16_ccitt()`. It compiles byte-identically on both boards. Non-obvious field encodings to keep in mind: `accel_g_x100[3]` rails at ±1600 (16 g); `nonce` in `command_packet_t` is anti-replay (FC rejects repeats).
+The checked-in `shared/protocol.h` is the source of truth — read it directly rather than a copy here. It defines: link params (`LORA_*`, all of §3), `LINK_MAGIC`/`PROTO_VERSION`/`NUM_PYRO`, the `packet_type_t` / `flight_state_t` / `command_id_t` enums, the `FLAG_*` status bits, the packed `telem_packet_t` / `command_packet_t` structs, and `crc16_ccitt()`. It compiles byte-identically on both boards. `PROTO_VERSION` is **3** — the 54-byte `telem_packet_t` adds `seq` (TX frame counter → host packet-delivery ratio), a last-event echo (`last_evt_state`/`last_evt_count` → missed-event detection), and a `main_alt_m` read-back. Non-obvious field encodings to keep in mind: `accel_g_x100[3]` rails at ±1600 (16 g); `nonce` in `command_packet_t` is anti-replay (FC rejects repeats).
 
 Validation on RX: check `magic`, `version`, then `crc16_ccitt(buf, len-2) == crc`. Reject otherwise. `CMD_TEST_FIRE` handler on the FC must check state == `ST_GROUND_IDLE`, test-enabled, and a valid passcode/channel in `arg`, and a fresh `nonce`.
 
@@ -229,5 +229,10 @@ cp ground-station/build/*.uf2 /Volumes/RPI-RP2   # or: picotool load -f gs.uf2
 - [x] Confirm **pyro channel count** + gate/continuity pins; set `NUM_PYRO` — **done**: 1 channel (gate PB13, sense PC1), `NUM_PYRO 1`.
 - [x] Confirm SD interface (SDIO vs SPI), servo count/timers, battery sense source — **done**: SDMMC1 4-bit; servos ×4 on TIM2 CH1–4; battery via BQ25883 ADC (I²C).
 - [x] Identify GPS + barometer parts → choose drivers/protocols — baro **done**: BMP580 (I²C1). GPS: external NMEA module on USART6 (J8 JST-GH; generic GGA/RMC autobaud driver — exact module part not identified).
+- [x] Implement the firmware + host tooling — **done (SIL/host-tested + bench-flashed, NOT flight-tested)**: safety/deploy hardening (arm gate + deploy inhibits + fire/continuity-retry), telemetry v3, config persistence (`param_store`), servo release ×4, baro temperature-compensated altitude, and the Flight Deck dashboard (`tools/deck` + `tools/deck_ui`).
 - [ ] Tune flight thresholds (`LAUNCH_G`, `MAIN_ALT`, debounces, timers) to the motor/airframe.
+- [ ] Tune the per-motor apogee/backup-deploy timer (runtime `apogee <ms>`, persisted) to the motor.
+- [ ] Verify `ARM_UP_AXIS` against the actual mount (default **+Z**; a wrong axis safely refuses to arm).
+- [ ] Reduce baro-only Kalman apogee-detection lag — SIL shows ~70 m past true apogee at `KAL_Q_ACCEL=4`; candidate to raise once real flight data exists.
 - [ ] Confirm 915 MHz TX power vs regulatory (Part 15 / amateur 33 cm) before range tests.
+- [ ] GS **TCXO vs XTAL** from the GS schematic — still open (GS work deferred).
