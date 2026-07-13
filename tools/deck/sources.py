@@ -26,17 +26,21 @@ from collections import deque
 
 from . import schema
 import telem_decode as td   # sys.path fixed by deck.schema import above
+import decode_log           # SD LOGnnn.BIN decoder (same tools/ dir)
 
 WINDOW_S = 130.0          # rolling series window (charts pan back 120 s)
 RATE_WINDOW_S = 5.0       # packet-rate sliding window
 RECONNECT_S = 2.0         # serial reopen retry period
 EVENTS_MAX = 1000         # event log cap (oldest dropped)
 REBOOT_TMS_MARGIN = 500   # t_ms must fall by > this to call it a reboot
+_BIN_RSSI = -70.0         # SD .bin has no link quality: synthetic rssi/snr
+_BIN_SNR = 9.0            # (same nominal pair the jsonl/synthetic paths use)
 
 # FC console poll cadences (donor: live_dashboard.py, extended)
 STATUS_PERIOD = 0.5
 GPS_PERIOD = 5.0
 RADIO_PERIOD = 5.0
+TX_PERIOD = 5.0
 CHARGE_PERIOD = 5.0
 LOG_PERIOD = 5.0
 SENSOR_PERIOD = 0.0       # flat-out; serial round-trip is the limit
@@ -65,6 +69,13 @@ RE_GPSAGE = re.compile(r"last_fix=(\d+) ms ago")
 RE_RADIO = re.compile(r"radio:\s+(\w+)\s+tcxo:\s+(\S+)")
 RE_RADIO_CNT = re.compile(r"reinit attempts:\s+(\d+)\s+tx timeouts:\s+(\d+)")
 RE_RADIO_IRQ = re.compile(r"chip irq status:\s+0x([0-9A-Fa-f]+)")
+# `tx` dashboard (bare `tx`): "power:22 dBm" / "packets: tx=.. rx=.." /
+# "last rx: rssi=-72 dBm  snr=9 dB" (or "last rx: (none)").
+RE_TX_POWER = re.compile(r"power:(-?\d+) dBm")
+RE_TX_PKTS = re.compile(r"packets: tx=(\d+)\s+rx=(\d+)")
+RE_TX_RXQ = re.compile(r"last rx: rssi=(-?\d+) dBm\s+snr=(-?\d+) dB")
+# `status`: "mcu:     23.9 C (die)" — STM32 internal die temp (fc only)
+RE_MCU = re.compile(r"mcu:\s+(-?[\d.]+) C")
 RE_CHARGE = re.compile(r"charger: vbat=(\d+) mV stat=0x([0-9A-Fa-f]+) charging=(\d) fault=(\d)")
 RE_LOG = re.compile(r"log:\s+(running|not running)")
 RE_LOGSTAT = re.compile(r"drops:\s+(\d+)\s+ring high-water:\s+(\d+)/(\d+) bytes")
@@ -163,34 +174,38 @@ def gs_json_line(d, rssi, snr):
     g1 = d["gyro_dps_x10"]
     a2 = d["accel_g"]
     g2 = d["gyro_dps"]
+    # eng mcu_temp_c: null when the die-temp read failed (gs.ino matches)
+    mcu_c = "null" if d.get("mcu_temp_c") is None else "%.1f" % d["mcu_temp_c"]
     return (
         '{"magic":%d,"version":%d,"type":%d,"state":%d,"t_ms":%d,'
         '"lat_e7":%d,"lon_e7":%d,'
         '"alt_baro_cm":%d,"alt_gps_cm":%d,"vel_up_cms":%d,'
         '"accel_g_x100":[%d,%d,%d],"gyro_dps_x10":[%d,%d,%d],'
         '"batt_mv":%d,"pyro_cont":%d,"pyro_fired":%d,"sats":%d,'
-        '"flags":%d,"crc16":%d,'
-        '"state_name":"%s",'
+        '"flags":%d,"mcu_temp_c10":%d,'
+        '"seq":%d,"last_evt_state":%d,"last_evt_count":%d,"main_alt_m":%d,"crc16":%d,'
+        '"state_name":"%s","last_evt_name":"%s",'
         '"lat_deg":%.7f,"lon_deg":%.7f,'
         '"alt_baro_m":%.2f,"alt_gps_m":%.2f,"vel_up_ms":%.2f,'
         '"accel_g":[%.2f,%.2f,%.2f],"gyro_dps":[%.1f,%.1f,%.1f],'
-        '"batt_v":%.3f,'
+        '"batt_v":%.3f,"mcu_temp_c":%s,'
         '"gps_fix":%s,"accel_sat":%s,"armed":%s,"sd_ok":%s,'
-        '"chg_ok":%s,"gps_ok":%s,'
+        '"chg_ok":%s,"gps_ok":%s,"low_batt":%s,"deploy_fail":%s,'
         '"rssi":%.1f,"snr":%.2f}'
         % (d["magic"], d["version"], d["type"], d["state"], d["t_ms"],
            d["lat_e7"], d["lon_e7"],
            d["alt_baro_cm"], d["alt_gps_cm"], d["vel_up_cms"],
            a1[0], a1[1], a1[2], g1[0], g1[1], g1[2],
            d["batt_mv"], d["pyro_cont"], d["pyro_fired"], d["sats"],
-           d["flags"], d["crc16"],
-           d["state_name"],
+           d["flags"], d["mcu_temp_c10"],
+           d["seq"], d["last_evt_state"], d["last_evt_count"], d["main_alt_m"], d["crc16"],
+           d["state_name"], d["last_evt_name"],
            d["lat_deg"], d["lon_deg"],
            d["alt_baro_m"], d["alt_gps_m"], d["vel_up_ms"],
            a2[0], a2[1], a2[2], g2[0], g2[1], g2[2],
-           d["batt_v"],
+           d["batt_v"], mcu_c,
            b(d["gps_fix"]), b(d["accel_sat"]), b(d["armed"]), b(d["sd_ok"]),
-           b(d["chg_ok"]), b(d["gps_ok"]),
+           b(d["chg_ok"]), b(d["gps_ok"]), b(d["low_batt"]), b(d["deploy_fail"]),
            rssi, snr))
 
 
@@ -268,9 +283,15 @@ def synthetic_profile(name="nominal"):
     rng = random.Random(42)
     lines = []
     prev_state = None
+    seq = 0
+    last_evt = 0
+    evt_count = 0
     for i, t in enumerate(ticks):
         st = _syn_state(t)
         alt, vel = _syn_alt_vel(t)
+        if prev_state is not None and st != prev_state:   # v3 event echo
+            evt_count = (evt_count + 1) & 0xFF
+            last_evt = st
 
         if st == 3:
             accel, gyro = (12, -8, 1600), (900, -35, 25)   # railed, thrusting
@@ -306,17 +327,25 @@ def synthetic_profile(name="nominal"):
             pyro_fired=fired,
             sats=8 + (i % 3),
             flags=flags,
+            # MCU die temp drifts up ~28->40 C (TX self-heating over the IMU)
+            mcu_temp_c10=int(round((28.0 + 12.0 * min(t, _SYN_END) / _SYN_END)
+                                   * 10)),
+            main_alt_m=150,
+            last_evt_state=last_evt,
+            last_evt_count=evt_count,
         )
         rssi = -70.0 - 25.0 * min(alt, 400.0) / 400.0
         snr = 9.0 - 5.0 * min(alt, 400.0) / 400.0
 
         if prev_state is not None and st != prev_state:
             evt = td.parse_telem(td.build_telem(ptype=schema.PKT_EVENT,
-                                                **fields))
+                                                seq=seq & 0xFFFF, **fields))
             lines.append(gs_json_line(evt, rssi, snr))
+            seq += 1
         tel = td.parse_telem(td.build_telem(ptype=schema.PKT_TELEMETRY,
-                                            **fields))
+                                            seq=seq & 0xFFFF, **fields))
         lines.append(gs_json_line(tel, rssi, snr))
+        seq += 1
         prev_state = st
     return lines
 
@@ -577,10 +606,51 @@ class ReplaySource(_JsonLineSource):
     def _load(self):
         if self.synthetic is not None:
             return synthetic_profile(self.synthetic)
-        if self.path.lower().endswith(".csv"):
+        low = self.path.lower()
+        if low.endswith(".csv"):
             return self._load_csv(self.path)
+        if low.endswith(".bin"):
+            return self._load_bin(self.path)
         with open(self.path, encoding="utf-8", errors="replace") as f:
             return [ln for ln in f.read().splitlines() if ln.strip()]
+
+    @staticmethod
+    def _load_bin(path):
+        """SD LOGnnn.BIN -> deck GS-JSON lines.  Reuse decode_log.iter_records
+        (magic+CRC checked, corrupt bytes skipped) for the binary decode, map
+        each record's engineering-unit fields to build_telem's RAW wire kwargs,
+        then round-trip through parse_telem/gs_json_line like every other path.
+        The log carries no link quality -> synthetic rssi/snr constants."""
+        def clamp(v, lo, hi):
+            # A NaN/inf sensor sample (a CRC-valid record can still hold one, e.g.
+            # a diverged Kalman alt) or a huge finite value must never abort the
+            # whole replay via int()/round() raising or struct overflow.
+            try:
+                v = int(round(v))
+            except (ValueError, OverflowError):
+                return 0
+            return lo if v < lo else (hi if v > hi else v)
+
+        def i16(v):
+            return clamp(v, -32768, 32767)      # railed 16 g accel (1600) fits
+        I32 = 2 ** 31
+        lines = []
+        for r in decode_log.iter_records(path):
+            tel = td.parse_telem(td.build_telem(
+                state=r["state"], t_ms=r["t_ms"],
+                alt_baro_cm=clamp(r["agl_m"] * 100, -I32, I32 - 1),
+                vel_up_cms=i16(r["vel_ms"] * 100),
+                accel_g_x100=[i16(a * 100) for a in
+                              (r["ax_g"], r["ay_g"], r["az_g"])],
+                gyro_dps_x10=[i16(g * 10) for g in
+                              (r["gx_dps"], r["gy_dps"], r["gz_dps"])],
+                lat_e7=r["lat_e7"], lon_e7=r["lon_e7"],
+                alt_gps_cm=r["alt_gps_cm"], batt_mv=r["batt_mv"],
+                sats=r["sats"], pyro_cont=r["pyro_cont"],
+                pyro_fired=r["pyro_fired"],
+                flags=r["flags"] & 0xFF))       # log u16 -> protocol u8 FLAG_*
+            lines.append(gs_json_line(tel, _BIN_RSSI, _BIN_SNR))
+        return lines
 
     @staticmethod
     def _load_csv(path):
@@ -787,6 +857,7 @@ class FcConsoleSource(Source):
         self._last_status = 0.0
         self._last_gps = 0.0
         self._last_radio = 0.0
+        self._last_tx = 0.0
         self._last_charge = 0.0
         self._last_log = 0.0
         self._last_sensor = 0.0
@@ -896,6 +967,11 @@ class FcConsoleSource(Source):
             self._parse_radio(out, self.now())
             self._last_radio = self._clock()
             return "radio"
+        if now - self._last_tx > TX_PERIOD:
+            out = self._txn(port, "tx", b"cw:")
+            self._parse_tx(out, self.now())
+            self._last_tx = self._clock()
+            return "tx"
         if now - self._last_charge > CHARGE_PERIOD:
             out = self._txn(port, "charge", b"fault=")
             self._parse_charge(out, self.now())
@@ -1007,6 +1083,9 @@ class FcConsoleSource(Source):
                 self._latest["batt_mv"] = mv
                 self._latest["batt_v"] = mv / 1000.0
                 self._append_locked("batt", [t, mv / 1000.0])
+            m = RE_MCU.search(out)      # STM32 internal die temp (fc only)
+            if m:
+                self._latest["mcu_temp_c"] = float(m.group(1))
             m = RE_FLAGS.search(out)
             if m:
                 self._latest["gps_fix"] = bool(int(m.group(1)))
@@ -1097,6 +1176,25 @@ class FcConsoleSource(Source):
             m = RE_RADIO_IRQ.search(out)
             if m:
                 self._latest["radio_irq"] = m.group(1)
+
+    def _parse_tx(self, out, now):
+        """`tx` dashboard: TX power, packet counts, last-RX link quality.
+        This is the FC's own radio state — the 'GS link' panel is downlink-
+        as-seen-by-the-GS, so the FC-console path surfaces these instead."""
+        self._scan_boot(out, now)
+        with self._lock:
+            self._latest["t_host"] = round(now, 3)
+            m = RE_TX_POWER.search(out)
+            if m:
+                self._latest["tx_power_dbm"] = int(m.group(1))
+            m = RE_TX_PKTS.search(out)
+            if m:
+                self._latest["tx_count"] = int(m.group(1))
+                self._latest["rx_count"] = int(m.group(2))
+            m = RE_TX_RXQ.search(out)   # absent when "last rx: (none)"
+            if m:
+                self._latest["rx_rssi"] = int(m.group(1))
+                self._latest["rx_snr"] = int(m.group(2))
 
     def _parse_charge(self, out, now):
         self._scan_boot(out, now)

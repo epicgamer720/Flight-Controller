@@ -32,6 +32,7 @@ import re
 import secrets
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import commands as cmdmod
@@ -41,6 +42,76 @@ from .sources import FcConsoleSource, GsJsonSource, ReplaySource
 
 POLL_S = 0.05
 FC_VID, FC_PID = 0x0483, 0x5740      # STM32 VCP (serial_monitor.py)
+
+
+def _json_safe(o):
+    """Replace non-finite floats (NaN/±Inf) with None so the payload is
+    valid JSON. Python's json emits bare NaN/Infinity tokens that the
+    browser's JSON.parse rejects, which would freeze the whole dashboard
+    on a single bad in-flight value (e.g. a diverged Kalman velocity)."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    return o
+
+
+def _haversine_m(lat1, lon1, lat2, lon2):
+    """Great-circle distance (m) between two lat/lon degree pairs."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _bearing_deg(lat1, lon1, lat2, lon2):
+    """True bearing (deg, 0=N) from point 1 to point 2."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+# --- satellite imagery for the ground track (Esri World Imagery, keyless) ---
+# Offline-first: fetched ONCE server-side when the pad fix is known, cached, and
+# served locally (/sat) so the browser makes no external request; on any failure
+# (no network) the client falls back to the plain grid.
+SAT_HALF_M = 500.0     # image covers +/- this many GROUND metres around the pad
+SAT_PX = 512
+_SAT_URL = ("https://services.arcgisonline.com/arcgis/rest/services/"
+            "World_Imagery/MapServer/export?bbox=%f,%f,%f,%f&bboxSR=3857"
+            "&imageSR=3857&size=%d,%d&format=jpg&f=image")
+
+
+def _merc(lat, lon):
+    """WGS84 lat/lon (deg) -> Web Mercator (EPSG:3857) metres."""
+    r = 6378137.0
+    return (r * math.radians(lon),
+            r * math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0)))
+
+
+def _fetch_sat_image(lat, lon):
+    """Fetch one Esri World Imagery JPEG centred on the pad, covering
+    +/- SAT_HALF_M ground metres. Returns JPEG bytes, or None on any failure
+    (offline / non-image response). Web Mercator stretches by sec(lat), so the
+    requested Mercator half-extent is SAT_HALF_M/cos(lat) to cover the intended
+    ground extent."""
+    try:
+        cx, cy = _merc(lat, lon)
+        h = SAT_HALF_M / max(0.01, math.cos(math.radians(lat)))
+        url = _SAT_URL % (cx - h, cy - h, cx + h, cy + h, SAT_PX, SAT_PX)
+        with urllib.request.urlopen(url, timeout=8.0) as r:
+            data = r.read()
+        if data[:2] == b"\xff\xd8":        # JPEG magic (export returns JSON on error)
+            return data
+    except Exception:
+        pass
+    return None
 
 
 class Deck:
@@ -57,8 +128,13 @@ class Deck:
         self._cursor = -1.0
         self._eseq = -1
         self.peaks = {"apogee_m": None, "max_vel_ms": None,
-                      "max_abs_g": None}
+                      "max_abs_g": None, "apogee_gps_m": None}
         self.tplus = {"launch_t_host": None, "state": None}
+        self.pad_fix = None       # {lat, lon, alt_gps_m} snapshot near launch
+        self._last_fix = None     # most recent good GPS fix (for pad snapshot)
+        self.sat = None           # ground-track satellite bg: {ready, half_m, url}
+        self._sat_bytes = None    # cached JPEG served at /sat
+        self._sat_tried = False   # one fetch attempt per pad
         self._stop = threading.Event()
         self._poll = None
 
@@ -85,8 +161,13 @@ class Deck:
             self._cursor = -1.0
             self._eseq = -1
             self.peaks = {"apogee_m": None, "max_vel_ms": None,
-                          "max_abs_g": None}
+                          "max_abs_g": None, "apogee_gps_m": None}
             self.tplus = {"launch_t_host": None, "state": None}
+            self.pad_fix = None
+            self._last_fix = None
+            self.sat = None
+            self._sat_bytes = None
+            self._sat_tried = False
             if self.recorder.enabled and kind in ("fc", "gs"):
                 if self.recorder.active:
                     self.recorder.stop()   # rotate: fresh session per source
@@ -163,14 +244,72 @@ class Deck:
             mag = math.sqrt(sum(x * x for x in row[1:4] if x is not None))
             if p["max_abs_g"] is None or mag > p["max_abs_g"]:
                 p["max_abs_g"] = round(mag, 2)
-        st = (d.get("latest") or {}).get("state")
+        latest = d.get("latest") or {}
+        st = latest.get("state")
         if st is not None:
             self.tplus["state"] = st
+        # track the most recent good GPS fix, to freeze as the pad position
+        if latest.get("gps_fix") and latest.get("lat_deg") is not None \
+                and latest.get("lon_deg") is not None:
+            self._last_fix = {"lat": latest["lat_deg"], "lon": latest["lon_deg"],
+                              "alt_gps_m": latest.get("alt_gps_m")}
+            # fallback: if we launched before ever getting a fix, adopt the first
+            # post-launch fix as an approximate pad reference (better than never).
+            if self.pad_fix is None and self.tplus["launch_t_host"] is not None:
+                self.pad_fix = dict(self._last_fix)
         if self.tplus["launch_t_host"] is None:
             for ev in d.get("events") or ():
                 if ev["kind"] == "state" and ev["text"].endswith("-> BOOST"):
                     self.tplus["launch_t_host"] = ev["t_host"]
+                    if self.pad_fix is None and self._last_fix is not None:
+                        self.pad_fix = dict(self._last_fix)     # freeze pad fix
                     break
+        # GPS-derived apogee (MSL AGL vs pad) for the baro-vs-GPS check (7d)
+        if self.pad_fix is not None and self.pad_fix.get("alt_gps_m") is not None:
+            ag = latest.get("alt_gps_m")
+            if ag is not None:
+                agl = ag - self.pad_fix["alt_gps_m"]
+                if self.peaks["apogee_gps_m"] is None or agl > self.peaks["apogee_gps_m"]:
+                    self.peaks["apogee_gps_m"] = round(agl, 2)
+        self._maybe_fetch_sat()
+
+    def _maybe_fetch_sat(self):
+        """One-shot background fetch of the pad's satellite tile, the first time
+        a pad fix exists. Never blocks the poll thread; on failure sets
+        sat.ready=False so the client falls back to the grid."""
+        if self._sat_tried or self.pad_fix is None:
+            return
+        self._sat_tried = True
+        pad = self.pad_fix
+
+        def work():
+            data = _fetch_sat_image(pad["lat"], pad["lon"])
+            if data:
+                self._sat_bytes = data          # set bytes BEFORE the ready flag
+                self.sat = {"ready": True, "half_m": SAT_HALF_M,
+                            "url": "/sat?c=%.5f,%.5f" % (pad["lat"], pad["lon"])}
+            else:
+                self.sat = {"ready": False}
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def sat_image(self):
+        return self._sat_bytes
+
+    def _recovery(self, latest):
+        """Bearing + distance from the frozen pad fix to the latest position
+        (recovery aid). None until we have both a pad fix and a live fix."""
+        pad = self.pad_fix          # snapshot: a concurrent set_source() may null it
+        if pad is None:
+            return None
+        lat, lon = latest.get("lat_deg"), latest.get("lon_deg")
+        if lat is None or lon is None or not latest.get("gps_fix"):
+            return None
+        return {
+            "distance_m": round(_haversine_m(pad["lat"], pad["lon"], lat, lon), 1),
+            "bearing_deg": round(_bearing_deg(pad["lat"], pad["lon"], lat, lon), 1),
+            "pad_lat": pad["lat"], "pad_lon": pad["lon"],
+        }
 
     # -- request-facing --
     def data(self, since):
@@ -179,7 +318,7 @@ class Deck:
             return {"now": 0, "source": {"kind": None, "connected": False},
                     "rec": self._rec_info(), "latest": {}, "series": {},
                     "peaks": self.peaks, "tplus": self.tplus,
-                    "counters": {}}
+                    "recovery": None, "sat": None, "counters": {}}
         d = src.drain(since=since)
         return {
             "now": d["now"],
@@ -192,6 +331,8 @@ class Deck:
             "counters": d["counters"],
             "peaks": self.peaks,
             "tplus": dict(self.tplus),
+            "recovery": self._recovery(d.get("latest") or {}),
+            "sat": self.sat,
             "capabilities": {n: c.to_dict() for n, c
                              in cmdmod.CAPABILITIES.items()},
         }
@@ -250,7 +391,7 @@ def make_server(deck, ui_dir, host="127.0.0.1", port=8322):
         # -- helpers --
         def _send(self, code, body, ctype="application/json"):
             data = body if isinstance(body, bytes) else \
-                json.dumps(body).encode()
+                json.dumps(_json_safe(body)).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
@@ -284,7 +425,14 @@ def make_server(deck, ui_dir, host="127.0.0.1", port=8322):
                 self._send(200, deck.events(seq))
             elif self.path.startswith("/ports"):
                 self._send(200, {"ports": list_ports()})
-            elif self.path == "/" or self.path.startswith("/index"):
+            elif self.path.startswith("/sat"):
+                img = deck.sat_image()
+                if img is None:
+                    self._send(404, {"error": "no satellite image"})
+                else:
+                    self._send(200, img, "image/jpeg")
+            elif self.path == "/" or self.path.startswith(
+                    ("/index", "/?")):
                 self._static("index.html", inject_token=True)
             elif self.path.startswith("/ui/"):
                 name = os.path.basename(self.path.split("?")[0])

@@ -41,7 +41,10 @@ ARM_REFUSAL = {          # fsm_request_arm() codes (state_machine.c)
     -2: "IMU/baro unhealthy",
     -3: "gyro cal not done (run cal, keep still ~2 s)",
     -4: "moving (|vel| >= 2 m/s)",
-    -5: "tilt/accel implausible (accel_sat or | |a|-1g | >= 0.5 g)",
+    -5: "accel implausible (accel_sat or | |a|-1g | >= 0.5 g)",
+    -6: "no pyro continuity (e-match open / not connected)",
+    -7: "battery too low (< ARM_MIN_VBAT_MV)",
+    -8: "not vertical (up-axis not ~+1 g or excess lateral g)",
 }
 
 
@@ -86,6 +89,11 @@ CAPABILITIES = {c.name: c for c in (
     Capability("bootloader", states=(1,), needs_disarmed=True,
                drops_port=True, confirm=True),
     Capability("wdtest", states=(0, 1), needs_disarmed=True,
+               drops_port=True, confirm=True),
+    # console: `tx power <dbm>`; GS: `power <dbm>` -> CMD_SET_TX_POWER uplink
+    Capability("power", gs=True, states=GROUND_STATES),
+    # STOP-mode low power; drops USB then reboots on wake (like reboot)
+    Capability("sleep", states=(0, 1), needs_disarmed=True,
                drops_port=True, confirm=True),
 )}
 
@@ -148,6 +156,8 @@ _OK_MARKERS = {
     "fire": ("fire pulse started",),
     "mainalt": ("saved to flash", "main_alt:"),
     "servo": ("servo ",),
+    "power": ("tx power",),          # "tx power = <n> dBm" on success
+    "sleep": ("sleeping",),          # "sleeping (STOP) ..." then the port drops
     "log": ("log: started", "log: closed", "log: running",
             "log: not running", "log: already running"),
     "nop": (),
@@ -181,6 +191,10 @@ class ConsoleCommandAdapter:
             return "servo %d %d" % (int(args["ch"]), int(args["us"]))
         if name == "log":
             return "log %s" % args.get("op", "stat")
+        if name == "power":
+            return "tx power %d" % int(args["dbm"])
+        if name == "sleep":
+            return "sleep %d" % int(args.get("secs", 0))   # 0 = until RESET
         return name
 
     def send(self, name, args=None, timeout=6.0):
@@ -258,6 +272,20 @@ def _validate_args(name, args):
             return "servo channel 1..4"
         if not (500 <= us <= 2500):
             return "servo pulse 500..2500 us"
+    if name == "power":
+        try:
+            dbm = int(args["dbm"])
+        except (KeyError, TypeError, ValueError):
+            return "tx power needs a dBm integer"
+        if not (-9 <= dbm <= 22):
+            return "tx power %d dBm outside -9..22" % dbm
+    if name == "sleep":
+        try:
+            secs = int(args.get("secs", 0))
+        except (TypeError, ValueError):
+            return "sleep needs a whole number of seconds"
+        if not (0 <= secs <= 36000):
+            return "sleep seconds 0..36000 (0 = until RESET)"
     return None
 
 
@@ -310,6 +338,8 @@ class GsCommandAdapter:
             return "fire %d %s" % (int(args["ch"]) - 1, args["passcode"])
         if name == "mainalt":
             return "mainalt %g" % float(args["m"])
+        if name == "power":
+            return "power %d" % int(args["dbm"])
         return name
 
     def _drain_stale(self):

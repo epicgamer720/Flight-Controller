@@ -594,9 +594,209 @@ class StateTimeline {
   }
 }
 
+/* ---------- GPS ground-track: equal-aspect east/north plan view ----------
+ * Standalone (NOT on the shared time axis). deck.js projects GPS to metres,
+ * pad-relative, and calls draw(points, apogeeIdx) on update. Colors come from
+ * the same THEME custom properties as the other charts (theme-aware). */
+class GroundTrack {
+  constructor(canvas){
+    this.canvas = canvas;
+    this.canvas.setAttribute('role', 'img');
+    this.canvas.setAttribute('aria-label', 'GPS ground track');
+    this.ctx = this.canvas.getContext('2d');
+    this.pad = 18;
+  }
+
+  /* nice 1/2/5·10^k >= a rough metre value (grid step) */
+  _niceStep(x){
+    if (!(x > 0)) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p;
+    return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+  }
+  _fmtM(m){
+    if (m >= 1000) return (m / 1000).toFixed(m >= 10000 ? 0 : 1) + ' km';
+    if (m >= 1)    return Math.round(m) + ' m';
+    return m.toFixed(1) + ' m';
+  }
+
+  /* bg (optional) = { img: <loaded HTMLImageElement>, halfM: <ground m> } —
+   * a north-up satellite tile covering ±halfM ground metres around the pad
+   * (points[0] == ground 0,0 == image centre). When present and loaded, the
+   * view LOCKS to ±halfM (no auto-fit) and the tile is drawn under the track.
+   * null / not-yet-loaded => unchanged auto-fit grid behaviour. */
+  draw(points, apogeeIdx, bg){
+    const ctx = this.ctx;
+    const rect = this.canvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    if (!w || !h) return;
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.max(1, Math.round(w * dpr));
+    this.canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const P = this.pad;
+    const left = P, right = w - P, top = P, bottom = h - P;
+    const plotW = right - left, plotH = bottom - top;
+    if (plotW < 20 || plotH < 20) return;
+    const cx = (left + right) / 2, cy = (top + bottom) / 2;
+
+    const pts = points || [];
+    const n = pts.length;
+
+    /* bounds over all points */
+    let minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity;
+    for (const p of pts){
+      if (!p) continue;
+      if (p[0] < minE) minE = p[0]; if (p[0] > maxE) maxE = p[0];
+      if (p[1] < minN) minN = p[1]; if (p[1] > maxN) maxN = p[1];
+    }
+
+    /* EQUAL ASPECT: one scale from the larger span so 1 m E == 1 m N on
+     * screen. MIN_SPAN floors it so 0/1/identical points never divide by 0. */
+    const bgOn = !!(bg && bg.img && bg.img.complete && bg.img.naturalWidth > 0);
+    const MIN_SPAN = 2;
+    let midE, midN, scale;
+    if (bgOn){
+      /* LOCK to ±halfM ground metres centred on the pad (image centre) */
+      midE = 0; midN = 0;
+      scale = Math.min(plotW, plotH) / (2 * bg.halfM);
+    } else if (n === 0 || minE === Infinity){
+      midE = 0; midN = 0;
+      scale = Math.min(plotW, plotH) / (MIN_SPAN * 8);   // default empty zoom
+    } else {
+      midE = (minE + maxE) / 2; midN = (minN + maxN) / 2;
+      const S = Math.max(maxE - minE, maxN - minN, MIN_SPAN);
+      scale = Math.min(plotW, plotH) / S;
+    }
+    const px = e => cx + (e - midE) * scale;
+    const py = nn => cy - (nn - midN) * scale;           // north up
+    const step = this._niceStep(56 / scale);
+
+    /* background grid (metre-aligned) + border */
+    ctx.save();
+    ctx.beginPath(); ctx.rect(left, top, plotW, plotH); ctx.clip();
+    if (bgOn){
+      /* fill exactly the ±halfM square (centred on the pad) with the tile */
+      const s = bg.halfM * scale;
+      ctx.drawImage(bg.img, cx - s, cy - s, 2 * s, 2 * s);
+    }
+    ctx.strokeStyle = THEME.grid; ctx.lineWidth = 1;
+    if (bgOn) ctx.globalAlpha = 0.25;          // grid drawn faintly over imagery
+    const eL = Math.ceil((midE - (cx - left) / scale) / step) * step;
+    for (let e = eL; px(e) <= right + 0.5; e += step){
+      const x = px(e);
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    }
+    const nB = Math.ceil((midN - (bottom - cy) / scale) / step) * step;
+    for (let nn = nB; py(nn) >= top - 0.5; nn += step){
+      const y = py(nn);
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
+    }
+
+    if (bgOn) ctx.globalAlpha = 1;
+
+    /* flight path + markers (clipped to the plot) */
+    if (n > 0){
+      if (n >= 2){
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < n; i++){
+          const p = pts[i]; if (!p) continue;
+          const x = px(p[0]), y = py(p[1]);
+          if (!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        }
+        /* over imagery: a card-toned halo under the trace so it stays legible */
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 4; ctx.stroke(); }
+        ctx.strokeStyle = THEME.series[0]; ctx.lineWidth = 2; ctx.stroke();
+      }
+      /* apogee: distinct diamond + tiny label */
+      if (apogeeIdx != null && apogeeIdx >= 0 && apogeeIdx < n && pts[apogeeIdx]){
+        const a = pts[apogeeIdx], x = px(a[0]), y = py(a[1]);
+        ctx.fillStyle = THEME.tone.flight.edge;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y);
+        ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath();
+        ctx.fill();
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5; ctx.stroke(); }
+        ctx.font = '9px Consolas, ui-monospace, monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+        ctx.fillText('apogee', x + 7, y - 3);
+      }
+      /* pad = points[0] (filled square) */
+      const p0 = pts[0];
+      if (p0){
+        ctx.fillStyle = THEME.ink2;
+        ctx.fillRect(px(p0[0]) - 4, py(p0[1]) - 4, 8, 8);
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5;
+                   ctx.strokeRect(px(p0[0]) - 4, py(p0[1]) - 4, 8, 8); }
+      }
+      /* current = last point (filled dot) */
+      const pc = pts[n - 1];
+      if (pc){
+        ctx.fillStyle = THEME.series[0];
+        ctx.beginPath(); ctx.arc(px(pc[0]), py(pc[1]), 4, 0, 6.2832); ctx.fill();
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+    }
+    ctx.restore();
+
+    /* border */
+    ctx.strokeStyle = THEME.axis; ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, plotW - 1, plotH - 1);
+
+    /* N arrow (top-right) — orientation hint */
+    const ax = right - 12, a0 = top + 12, a1 = top + 30;
+    ctx.strokeStyle = THEME.ink3; ctx.fillStyle = THEME.ink3; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax, a1); ctx.lineTo(ax, a0); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ax, a0 - 1); ctx.lineTo(ax - 3, a0 + 5);
+    ctx.lineTo(ax + 3, a0 + 5); ctx.closePath(); ctx.fill();
+    ctx.font = '9px Consolas, ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('N', ax, a0 - 3);
+
+    /* scale hint: metres per grid division (bottom-left) + track extent.
+     * Over imagery, the bottom-left slot carries the required Esri credit
+     * (Esri tile ToS) on a card chip instead of the grid-step hint. */
+    ctx.fillStyle = THEME.ink3;
+    ctx.font = '10px Consolas, ui-monospace, monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    if (bgOn){
+      const cr = 'Imagery © Esri';
+      const cw = ctx.measureText(cr).width;
+      ctx.globalAlpha = 0.7; ctx.fillStyle = THEME.card;
+      ctx.fillRect(left + 1, bottom - 13, cw + 6, 12);
+      ctx.globalAlpha = 1; ctx.fillStyle = THEME.ink2;
+      ctx.fillText(cr, left + 4, bottom - 2);
+    } else {
+      ctx.fillText('grid ' + this._fmtM(step), left + 2, bottom - 2);
+    }
+    if (n > 0){
+      ctx.textAlign = 'right';
+      ctx.fillText(this._fmtM(maxE - minE) + ' × ' + this._fmtM(maxN - minN),
+                   right - 2, bottom - 2);
+    }
+
+    /* degenerate: no fix yet */
+    if (n === 0){
+      ctx.fillStyle = THEME.ink3;
+      ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('no GPS fix', cx, cy);
+    }
+  }
+}
+
 /* ---------- render loop: draw only when a chart is dirty ---------- */
 function frame(){
-  for (const c of charts) if (c.dirty){ c.dirty = false; c.draw(); }
+  // guard each draw: one chart throwing must not kill the rAF loop and
+  // freeze every other chart until reload
+  for (const c of charts) if (c.dirty){
+    c.dirty = false;
+    try { c.draw(); } catch (e){ console.error('chart draw failed', e); }
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

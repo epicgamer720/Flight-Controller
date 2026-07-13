@@ -51,15 +51,15 @@ class TestLineIngest(unittest.TestCase):
         self.assertEqual(k, "gs_boot")
         for err in ('{"error":"radio_init","status":-3}',
                     '{"error":"rx","status":-2,"len":0}',
-                    '{"error":"crc16","len":46,"rssi":-88.5,"snr":4.25}',
-                    '{"error":"bad_magic","len":46,"rssi":-88.5,"snr":4.25}'):
+                    '{"error":"crc16","len":48,"rssi":-88.5,"snr":4.25}',
+                    '{"error":"bad_magic","len":48,"rssi":-88.5,"snr":4.25}'):
             k, obj = self.ing.feed(err)
             self.assertEqual(k, "gs_error")
 
     def test_cmd_echo(self):
         # a heard-back 14-byte command frame decoded by the GS
         k, obj = self.ing.feed(
-            '{"magic":82,"version":1,"type":16,"cmd":4,"cmd_name":'
+            '{"magic":82,"version":2,"type":16,"cmd":4,"cmd_name":'
             '"CMD_SET_MAIN_ALT","arg":15000,"nonce":9,"crc16":123,'
             '"rssi":-60.0,"snr":9.5}')
         self.assertEqual(k, "cmd_echo")
@@ -78,19 +78,28 @@ class TestLineIngest(unittest.TestCase):
             state=4, t_ms=12345, lat_e7=391234567, lon_e7=-771234567,
             alt_baro_cm=39920, alt_gps_cm=51000, vel_up_cms=7500,
             accel_g_x100=(12, -8, 1600), gyro_dps_x10=(900, -35, 25),
-            batt_mv=8123, pyro_cont=1, pyro_fired=0, sats=9,
+            batt_mv=8123, pyro_cont=1, pyro_fired=0, sats=9, mcu_temp_c10=352,
             flags=schema.FLAG_GPS_FIX | schema.FLAG_ACCEL_SAT))
         k, obj = self.ing.feed(gs_json_line(d, -77.5, 6.25))
         self.assertEqual(k, "telem")
         for key in ("state", "t_ms", "lat_e7", "alt_baro_cm", "vel_up_cms",
-                    "batt_mv", "flags", "crc16", "state_name"):
+                    "batt_mv", "flags", "crc16", "state_name", "mcu_temp_c10"):
             self.assertEqual(obj[key], d[key], key)
         self.assertAlmostEqual(obj["alt_baro_m"], d["alt_baro_m"], places=2)
         self.assertAlmostEqual(obj["vel_up_ms"], d["vel_up_ms"], places=2)
         self.assertEqual(obj["accel_g_x100"], list(d["accel_g_x100"]))
+        self.assertAlmostEqual(obj["mcu_temp_c"], 35.2, places=2)
         self.assertIs(obj["accel_sat"], True)
         self.assertEqual(obj["rssi"], -77.5)
         self.assertEqual(obj["snr"], 6.25)
+
+    def test_gs_serializer_emits_null_mcu_temp_when_unread(self):
+        d = td.parse_telem(td.build_telem(state=1))   # default sentinel
+        self.assertIsNone(d["mcu_temp_c"])
+        line = gs_json_line(d, -70.0, 8.0)
+        self.assertIn('"mcu_temp_c":null', line)
+        k, obj = self.ing.feed(line)
+        self.assertIsNone(obj["mcu_temp_c"])
 
 
 # ============================================================
@@ -145,6 +154,12 @@ class TestSyntheticProfile(unittest.TestCase):
         by_alt = sorted((o["alt_baro_m"], o["rssi"])
                         for _, o in self.frames)
         self.assertGreater(by_alt[0][1], by_alt[-1][1] + 15.0)
+
+    def test_mcu_temp_downlinked_and_rises(self):
+        temps = [o["mcu_temp_c"] for _, o in self.frames]
+        self.assertTrue(all(t is not None for t in temps))
+        self.assertAlmostEqual(temps[0], 28.0, delta=0.5)
+        self.assertGreater(temps[-1], temps[0])   # TX self-heating drift
 
     def test_pyro_fired_from_main(self):
         for _, o in self.frames:
@@ -243,9 +258,16 @@ STATUS_REPLY = (b"status\r\n"
                 b"armed:   0  testen: 1  main_alt: 150.00 m\r\n"
                 b"alt:     0.33 m AGL  vel: 0.00 m/s\r\n"
                 b"batt:    8057 mV\r\n"
+                b"mcu:     23.90 C (die)\r\n"
                 b"flags:   gps_fix=0 accel_sat=0\r\n"
                 b"health:  imu=1 baro=1 sd=1 radio=1 chg=1 gps=1\r\n"
                 b"pyro:    cont=0x01 fired=0x00 sense=14168 mV\r\n")
+TX_REPLY = (b"tx\r\n"
+            b"radio:   ok  tcxo:yes  power:22 dBm\r\n"
+            b"packets: tx=123  rx=4\r\n"
+            b"errors:  tx_timeouts=0  reinit=0\r\n"
+            b"last rx: rssi=-72 dBm  snr=9 dB\r\n"
+            b"monitor: off   cw: off\r\n")
 SENSORS_REPLY = (b"sensors\r\n"
                  b"imu:  ax=-0.03 ay=0.10 az=0.99 g  sat=0\r\n"
                  b"      gx=-0.11 gy=0.05 gz=-0.01 dps\r\n"
@@ -317,7 +339,8 @@ class FakePort:
 
 
 REPLIES = {"status": STATUS_REPLY, "sensors": SENSORS_REPLY,
-           "gps": GPS_REPLY, "radio": RADIO_REPLY, "charge": CHARGE_REPLY,
+           "gps": GPS_REPLY, "radio": RADIO_REPLY, "tx": TX_REPLY,
+           "charge": CHARGE_REPLY,
            "log stat": LOG_REPLY, "mainalt": MAINALT_REPLY}
 
 
@@ -336,17 +359,17 @@ class TestFcConsoleLadder(unittest.TestCase):
         """Mark every cadence timer freshly-served."""
         now = clock.t
         src._last_status = src._last_gps = src._last_radio = now
-        src._last_charge = src._last_log = now
+        src._last_tx = src._last_charge = src._last_log = now
 
     def test_ladder_priority_order(self):
         src, port, clock = make_src()
         port2 = port
-        # all timers stale -> status first, then gps, radio, charge, log,
+        # all timers stale -> status first, then gps, radio, tx, charge, log,
         # then sensors flat-out
-        order = [src._service(port2) for _ in range(7)]
-        self.assertEqual(order[:5], ["status", "gps", "radio", "charge",
-                                     "log"])
-        self.assertEqual(order[5:], ["sensors", "sensors"])
+        order = [src._service(port2) for _ in range(8)]
+        self.assertEqual(order[:6], ["status", "gps", "radio", "tx",
+                                     "charge", "log"])
+        self.assertEqual(order[6:], ["sensors", "sensors"])
 
     def test_status_parse_full(self):
         src, port, clock = make_src()
@@ -360,6 +383,7 @@ class TestFcConsoleLadder(unittest.TestCase):
         self.assertEqual(latest["main_alt_m"], 150.0)
         self.assertEqual(latest["alt_baro_m"], 0.33)
         self.assertEqual(latest["batt_mv"], 8057)
+        self.assertEqual(latest["mcu_temp_c"], 23.90)
         self.assertIs(latest["gps_fix"], False)
         for k in ("imu_ok", "baro_ok", "sd_ok", "radio_ok", "chg_ok",
                   "gps_ok"):
@@ -368,7 +392,7 @@ class TestFcConsoleLadder(unittest.TestCase):
 
     def test_sensors_gps_radio_charge_log_parse(self):
         src, port, clock = make_src()
-        for _ in range(6):
+        for _ in range(7):          # status, gps, radio, tx, charge, log, sensors
             src._service(port)
         latest = src.drain()["latest"]
         self.assertEqual(latest["accel_g"], [-0.03, 0.10, 0.99])
@@ -383,6 +407,11 @@ class TestFcConsoleLadder(unittest.TestCase):
         self.assertEqual(latest["radio_tcxo"], "yes")
         self.assertEqual(latest["radio_reinit"], 2)
         self.assertEqual(latest["radio_txto"], 5)
+        self.assertEqual(latest["tx_power_dbm"], 22)
+        self.assertEqual(latest["tx_count"], 123)
+        self.assertEqual(latest["rx_count"], 4)
+        self.assertEqual(latest["rx_rssi"], -72)
+        self.assertEqual(latest["rx_snr"], 9)
         self.assertEqual(latest["chg_stat"], 0x04)
         self.assertIs(latest["chg_charging"], True)
         self.assertIs(latest["log_running"], True)

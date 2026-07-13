@@ -6,19 +6,26 @@
  * FLASH LENGTH at 384K, so code can never overlap this sector —
  * an oversized image fails loudly at link time instead.
  *
- * Slot layout (16 bytes, little-endian, blank flash = all 0xFF):
+ * Slot layout (28 bytes, little-endian, blank flash = all 0xFF):
  *   off  0  uint16 magic        0x5250 ("PR" on the wire)
- *   off  2  uint8  ver          1
- *   off  3  uint8  len          payload bytes = 8 (main_alt_cm + seq)
- *   off  4  uint32 main_alt_cm  the ONLY persisted parameter
- *   off  8  uint32 seq          monotonic; highest CRC-valid seq wins
- *   off 12  uint8  spare[2]     0x00 pad so crc16 lands at offset 14
- *   off 14  uint16 crc16        CRC16-CCITT over bytes 0..13
+ *   off  2  uint8  ver          2  (v1 was 16 B main_alt+seq; v2 widened)
+ *   off  3  uint8  len          payload bytes = 20
+ *   off  4  uint32 main_alt_cm  main-deploy AGL
+ *   off  8  uint32 apogee_timeout_ms  per-motor apogee backup timer
+ *   off 12  int32  last_lat_e7  last GPS at landing (recovery); 0 = none
+ *   off 16  int32  last_lon_e7
+ *   off 20  uint32 seq          monotonic; highest CRC-valid seq wins
+ *   off 24  uint8  spare[2]     0x00 pad so crc16 lands at offset 26
+ *   off 26  uint16 crc16        CRC16-CCITT over bytes 0..25
+ *
+ * A v1 firmware's 16-byte records read as invalid here (ver mismatch) and are
+ * skipped; the first v2 save appends past them (or erase-recycles if the tail
+ * is unappendable), so the version bump migrates cleanly.
  *
  * Save = program the next blank slot (a few µs per word; the CPU
  * stalls briefly while executing from flash — acceptable on ground,
  * and saves are hard-gated to ground states). Erase happens only
- * when all 8192 slots are used: it blocks up to seconds, so the
+ * when all PARAM_NSLOTS slots are used: it blocks up to seconds, so the
  * IWDG is kicked before AND after (worst-case timeout ~2.8 s).
  * No cache maintenance needed: DCache is off (ICache only) and the
  * sector is data, never executed.
@@ -37,23 +44,28 @@
 #define PARAM_BASE_ADDR    0x08060000UL          /* flash sector 7 */
 #define PARAM_SECTOR       FLASH_SECTOR_7
 #define PARAM_SECTOR_BYTES (128u * 1024u)
-#define PARAM_SLOT_BYTES   16u
-#define PARAM_NSLOTS       (PARAM_SECTOR_BYTES / PARAM_SLOT_BYTES)  /* 8192 */
+#define PARAM_SLOT_BYTES   28u
+#define PARAM_NSLOTS       (PARAM_SECTOR_BYTES / PARAM_SLOT_BYTES)  /* 4681 */
 #define PARAM_MAGIC        0x5250u
-#define PARAM_VER          1u
-#define PARAM_PAYLOAD_LEN  8u                    /* main_alt_cm + seq */
+#define PARAM_VER          2u
+#define PARAM_PAYLOAD_LEN  20u                   /* main_alt+apogee+lat+lon+seq */
 
 typedef struct __attribute__((packed)) {
     uint16_t magic;          /* PARAM_MAGIC */
     uint8_t  ver;            /* PARAM_VER */
     uint8_t  len;            /* PARAM_PAYLOAD_LEN */
     uint32_t main_alt_cm;
+    uint32_t apogee_timeout_ms;
+    int32_t  last_lat_e7;
+    int32_t  last_lon_e7;
     uint32_t seq;
     uint8_t  spare[2];       /* 0x00 */
-    uint16_t crc16;          /* CRC16-CCITT over bytes 0..13 */
+    uint16_t crc16;          /* CRC16-CCITT over bytes 0..25 */
 } param_rec_t;
 _Static_assert(sizeof(param_rec_t) == PARAM_SLOT_BYTES,
-               "param record must be exactly one 16-byte slot");
+               "param record must be exactly one 28-byte slot");
+_Static_assert((PARAM_SLOT_BYTES % 4u) == 0u,
+               "slot must be word-aligned for flash word programming");
 
 static const volatile uint8_t *slot_addr(uint32_t idx)
 {
@@ -107,9 +119,9 @@ static void scan(bool *found, param_rec_t *best, int32_t *last_nonblank)
     }
 }
 
-/* Returns 0 and fills *main_alt_cm from the newest valid record;
+/* Returns 0 and fills *p from the newest valid record;
  * -1 if the store holds no valid record (fresh/erased flash). */
-int param_load(uint32_t *main_alt_cm)
+int param_load(params_t *p)
 {
     bool        found;
     param_rec_t best;
@@ -118,8 +130,12 @@ int param_load(uint32_t *main_alt_cm)
     scan(&found, &best, &last_nonblank);
     if (!found)
         return -1;
-    if (main_alt_cm != NULL)
-        *main_alt_cm = best.main_alt_cm;
+    if (p != NULL) {
+        p->main_alt_cm       = best.main_alt_cm;
+        p->apogee_timeout_ms = best.apogee_timeout_ms;
+        p->last_lat_e7       = best.last_lat_e7;
+        p->last_lon_e7       = best.last_lon_e7;
+    }
     return 0;
 }
 
@@ -171,7 +187,7 @@ static int erase_sector(void)
  * ST_LANDED): programming stalls the CPU and a full-store erase can
  * block for seconds — never acceptable in ARMED or any flight state.
  * Returns 0 = saved; -1 = refused (in flight); -2..-5 = flash error. */
-int param_save(uint32_t main_alt_cm)
+int param_save(const params_t *p)
 {
     if (g_fsm.state != ST_INIT && g_fsm.state != ST_GROUND_IDLE &&
         g_fsm.state != ST_LANDED)
@@ -184,12 +200,15 @@ int param_save(uint32_t main_alt_cm)
 
     param_rec_t rec;
     memset(&rec, 0, sizeof rec);
-    rec.magic       = PARAM_MAGIC;
-    rec.ver         = PARAM_VER;
-    rec.len         = PARAM_PAYLOAD_LEN;
-    rec.main_alt_cm = main_alt_cm;
-    rec.seq         = found ? (best.seq + 1u) : 1u;
-    rec.crc16       = crc16_ccitt((const uint8_t *)&rec, sizeof rec - 2u);
+    rec.magic             = PARAM_MAGIC;
+    rec.ver               = PARAM_VER;
+    rec.len               = PARAM_PAYLOAD_LEN;
+    rec.main_alt_cm       = p->main_alt_cm;
+    rec.apogee_timeout_ms = p->apogee_timeout_ms;
+    rec.last_lat_e7       = p->last_lat_e7;
+    rec.last_lon_e7       = p->last_lon_e7;
+    rec.seq               = found ? (best.seq + 1u) : 1u;
+    rec.crc16             = crc16_ccitt((const uint8_t *)&rec, sizeof rec - 2u);
 
     uint32_t idx = (uint32_t)(last_nonblank + 1);
     if (idx < PARAM_NSLOTS) {
@@ -198,7 +217,7 @@ int param_save(uint32_t main_alt_cm)
             return 0;
         /* Append failed: corrupt/disturbed tail — recycle the sector. */
     }
-    /* Sector full (8192 saves) or unappendable: erase, write slot 0. */
+    /* Sector full (PARAM_NSLOTS saves) or unappendable: erase, write slot 0. */
     int rc = erase_sector();
     if (rc != 0)
         return rc;

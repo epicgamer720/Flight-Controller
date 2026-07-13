@@ -31,7 +31,7 @@
 
 /* Wire-format guards: both MCUs are little-endian ARM; the packed
  * structs must be byte-for-byte what telem_decode.py expects. */
-static_assert(sizeof(telem_packet_t) == 46, "telem_packet_t must be 46 bytes");
+static_assert(sizeof(telem_packet_t) == 54, "telem_packet_t must be 54 bytes");
 static_assert(sizeof(command_packet_t) == 14, "command_packet_t must be 14 bytes");
 
 /* ---- explicit prototypes (keeps the .ino preprocessor honest with
@@ -67,6 +67,7 @@ static const char *const STATE_NAMES[] = {
 static const char *const CMD_NAMES[] = {
     "NOP", "ARM", "DISARM", "TEST_FIRE",
     "SET_MAIN_ALT", "ZERO_BARO", "REBOOT", "ENTER_BOOTLOADER",
+    "SET_TX_POWER",
 };
 
 /* ============================================================ */
@@ -178,7 +179,7 @@ void service_radio_rx(void)
 }
 
 /* Validate + dispatch one received frame.
- * 46 B = telem_packet_t (PKT_TELEMETRY / PKT_EVENT / PKT_ACK — the FC
+ * 48 B = telem_packet_t (PKT_TELEMETRY / PKT_EVENT / PKT_ACK — the FC
  * sends ACKs as full telemetry-shaped frames with type = PKT_ACK).
  * 14 B = command_packet_t (only seen if we hear our own uplink echoed). */
 void emit_packet(const uint8_t *buf, size_t len, float rssi, float snr)
@@ -236,6 +237,15 @@ void emit_telem(const telem_packet_t *p, float rssi, float snr)
 {
     char sn[24];
     state_name_str(p->state, sn, sizeof sn);
+    char en[24];                          /* v3: last-event state name echo */
+    state_name_str(p->last_evt_state, en, sizeof en);
+
+    /* engineering mcu_temp_c: null when the die-temp read failed (sentinel) */
+    char mcu[16];
+    if (p->mcu_temp_c10 == (int16_t)MCU_TEMP_NODATA)
+        snprintf(mcu, sizeof mcu, "null");
+    else
+        snprintf(mcu, sizeof mcu, "%.1f", (double)p->mcu_temp_c10 / 10.0);
 
     char js[1024];
     snprintf(js, sizeof js,
@@ -244,14 +254,15 @@ void emit_telem(const telem_packet_t *p, float rssi, float snr)
         "\"alt_baro_cm\":%ld,\"alt_gps_cm\":%ld,\"vel_up_cms\":%d,"
         "\"accel_g_x100\":[%d,%d,%d],\"gyro_dps_x10\":[%d,%d,%d],"
         "\"batt_mv\":%u,\"pyro_cont\":%u,\"pyro_fired\":%u,\"sats\":%u,"
-        "\"flags\":%u,\"crc16\":%u,"
-        "\"state_name\":\"%s\","
+        "\"flags\":%u,\"mcu_temp_c10\":%d,"
+        "\"seq\":%u,\"last_evt_state\":%u,\"last_evt_count\":%u,\"main_alt_m\":%u,\"crc16\":%u,"
+        "\"state_name\":\"%s\",\"last_evt_name\":\"%s\","
         "\"lat_deg\":%.7f,\"lon_deg\":%.7f,"
         "\"alt_baro_m\":%.2f,\"alt_gps_m\":%.2f,\"vel_up_ms\":%.2f,"
         "\"accel_g\":[%.2f,%.2f,%.2f],\"gyro_dps\":[%.1f,%.1f,%.1f],"
-        "\"batt_v\":%.3f,"
+        "\"batt_v\":%.3f,\"mcu_temp_c\":%s,"
         "\"gps_fix\":%s,\"accel_sat\":%s,\"armed\":%s,\"sd_ok\":%s,"
-        "\"chg_ok\":%s,\"gps_ok\":%s,"
+        "\"chg_ok\":%s,\"gps_ok\":%s,\"low_batt\":%s,\"deploy_fail\":%s,"
         "\"rssi\":%.1f,\"snr\":%.2f}",
         (unsigned)p->magic, (unsigned)p->version, (unsigned)p->type,
         (unsigned)p->state, (unsigned long)p->t_ms,
@@ -260,8 +271,10 @@ void emit_telem(const telem_packet_t *p, float rssi, float snr)
         (int)p->accel_g_x100[0], (int)p->accel_g_x100[1], (int)p->accel_g_x100[2],
         (int)p->gyro_dps_x10[0], (int)p->gyro_dps_x10[1], (int)p->gyro_dps_x10[2],
         (unsigned)p->batt_mv, (unsigned)p->pyro_cont, (unsigned)p->pyro_fired,
-        (unsigned)p->sats, (unsigned)p->flags, (unsigned)p->crc16,
-        sn,
+        (unsigned)p->sats, (unsigned)p->flags, (int)p->mcu_temp_c10,
+        (unsigned)p->seq, (unsigned)p->last_evt_state, (unsigned)p->last_evt_count,
+        (unsigned)p->main_alt_m, (unsigned)p->crc16,
+        sn, en,
         (double)p->lat_e7 / 1e7, (double)p->lon_e7 / 1e7,
         (double)p->alt_baro_cm / 100.0, (double)p->alt_gps_cm / 100.0,
         (double)p->vel_up_cms / 100.0,
@@ -269,13 +282,15 @@ void emit_telem(const telem_packet_t *p, float rssi, float snr)
         (double)p->accel_g_x100[2] / 100.0,
         (double)p->gyro_dps_x10[0] / 10.0, (double)p->gyro_dps_x10[1] / 10.0,
         (double)p->gyro_dps_x10[2] / 10.0,
-        (double)p->batt_mv / 1000.0,
+        (double)p->batt_mv / 1000.0, mcu,
         (p->flags & FLAG_GPS_FIX)   ? "true" : "false",
         (p->flags & FLAG_ACCEL_SAT) ? "true" : "false",
         (p->flags & FLAG_ARMED)     ? "true" : "false",
         (p->flags & FLAG_SD_OK)     ? "true" : "false",
         (p->flags & FLAG_CHG_OK)    ? "true" : "false",
         (p->flags & FLAG_GPS_OK)    ? "true" : "false",
+        (p->flags & FLAG_LOW_BATT)  ? "true" : "false",
+        (p->flags & FLAG_DEPLOY_FAIL) ? "true" : "false",
         (double)rssi, (double)snr);
     Serial.println(js);
 }
@@ -362,9 +377,23 @@ void handle_line(char *line)
         return;
     }
 
+    if (!strcmp(tok, "power")) {
+        char *a = strtok(NULL, " \t");
+        char *end = NULL;
+        long dbm = a ? strtol(a, &end, 10) : 0;
+        if (!a || end == a || dbm < -9 || dbm > 22) {
+            Serial.println("{\"error\":\"usage: power <-9..22 dBm>\"}");
+            return;
+        }
+        /* arg carries signed dBm; FC casts back (int32_t). Honored only in
+         * a pad RX window (FC is TX-only in flight). */
+        send_cmd(CMD_SET_TX_POWER, (uint32_t)(int32_t)dbm);
+        return;
+    }
+
     if (!strcmp(tok, "help")) {
         Serial.println("{\"help\":\"arm | disarm | mainalt <m> | zero | "
-                       "reboot | fire <ch> <hexcode> | nop\"}");
+                       "reboot | fire <ch> <hexcode> | power <dbm> | nop\"}");
         return;
     }
 
@@ -375,8 +404,10 @@ void send_cmd(uint8_t cmd, uint32_t arg)
 {
     /* Nonce start is randomized (seeded at first use, so operator timing
      * adds entropy on top of millis/micros) then increments monotonically.
-     * A fixed 1,2,3... start would collide with the FC's 8-deep anti-replay
-     * window after every GS restart, silently eating the first commands. */
+     * A fixed 1,2,3... start would collide with the FC's anti-replay dedup
+     * ring after every GS restart, silently eating the first commands; a
+     * fresh random seed lands outside it. (The FC keeps NO monotonic floor
+     * precisely so this random-reseed-on-restart is always accepted.) */
     if (!s_nonce_seeded) {
         randomSeed(millis() ^ (micros() << 7));
         s_nonce = ((uint32_t)random(0x10000) << 16) | (uint32_t)random(0x10000);

@@ -3,7 +3,7 @@
 
 Layouts (packed little-endian, byte-for-byte identical to the C structs):
 
-telem_packet_t (46 bytes, struct fmt <BBBBIiiiih3h3hHBBBBH):
+telem_packet_t (48 bytes, struct fmt <BBBBIiiiih3h3hHBBBBhH):
     magic            u8      LINK_MAGIC 0x52
     version          u8      PROTO_VERSION 1
     type             u8      packet_type_t (PKT_TELEMETRY / PKT_EVENT)
@@ -21,6 +21,7 @@ telem_packet_t (46 bytes, struct fmt <BBBBIiiiih3h3hHBBBBH):
     pyro_fired       u8      fired bitfield
     sats             u8
     flags            u8      FLAG_*
+    mcu_temp_c10     i16     STM32 die temp * 10 (MCU_TEMP_NODATA if unread)
     crc16            u16     CRC16-CCITT over all preceding bytes
 
 command_packet_t (14 bytes, struct fmt <BBBBIIH):
@@ -43,8 +44,9 @@ import sys
 
 # ---- shared/protocol.h constants ----
 LINK_MAGIC = 0x52          # 'R'
-PROTO_VERSION = 1
+PROTO_VERSION = 3          # v3: +seq, last_evt_state/count, main_alt_m echo (54 B)
 NUM_PYRO = 1
+MCU_TEMP_NODATA = -32768   # mcu_temp_c10 sentinel: die-temp read failed
 
 PKT_TELEMETRY = 0x01
 PKT_EVENT = 0x02
@@ -59,12 +61,13 @@ CMD_SET_MAIN_ALT = 4
 CMD_ZERO_BARO = 5
 CMD_REBOOT = 6
 CMD_ENTER_BOOTLOADER = 7
+CMD_SET_TX_POWER = 8
 
 CMD_NAMES = {
     CMD_NOP: "NOP", CMD_ARM: "ARM", CMD_DISARM: "DISARM",
     CMD_TEST_FIRE: "TEST_FIRE", CMD_SET_MAIN_ALT: "SET_MAIN_ALT",
     CMD_ZERO_BARO: "ZERO_BARO", CMD_REBOOT: "REBOOT",
-    CMD_ENTER_BOOTLOADER: "ENTER_BOOTLOADER",
+    CMD_ENTER_BOOTLOADER: "ENTER_BOOTLOADER", CMD_SET_TX_POWER: "SET_TX_POWER",
 }
 
 STATE_NAMES = [
@@ -78,14 +81,17 @@ FLAG_ARMED = 1 << 2
 FLAG_SD_OK = 1 << 3
 FLAG_CHG_OK = 1 << 4
 FLAG_GPS_OK = 1 << 5
+FLAG_LOW_BATT = 1 << 6
+FLAG_DEPLOY_FAIL = 1 << 7
 
 # ---- struct layouts ----
-TELEM_STRUCT = struct.Struct("<BBBBIiiiih3h3hHBBBBH")
-TELEM_LEN = TELEM_STRUCT.size          # 46
+# ...mcu_temp_c10(h) | seq(H) evt_state(B) evt_count(B) main_alt_m(H) | crc(H)
+TELEM_STRUCT = struct.Struct("<BBBBIiiiih3h3hHBBBBhHBBHH")
+TELEM_LEN = TELEM_STRUCT.size          # 54
 CMD_STRUCT = struct.Struct("<BBBBIIH")
 CMD_LEN = CMD_STRUCT.size              # 14
 
-assert TELEM_LEN == 46, "telem_packet_t must be 46 bytes"
+assert TELEM_LEN == 54, "telem_packet_t must be 54 bytes"
 assert CMD_LEN == 14, "command_packet_t must be 14 bytes"
 
 
@@ -126,7 +132,7 @@ def _check_frame(buf, expect_len, name):
 
 
 def parse_telem(buf):
-    """Parse a 46-byte telem_packet_t. Returns a dict with both raw fields
+    """Parse a 54-byte telem_packet_t. Returns a dict with both raw fields
     and engineering-unit fields. Raises ValueError on bad length / magic /
     version / CRC."""
     buf = bytes(buf)
@@ -136,6 +142,7 @@ def parse_telem(buf):
      lat_e7, lon_e7, alt_baro_cm, alt_gps_cm,
      vel_up_cms, ax, ay, az, gx, gy, gz,
      batt_mv, pyro_cont, pyro_fired, sats, flags,
+     mcu_temp_c10, seq, last_evt_state, last_evt_count, main_alt_m,
      crc) = TELEM_STRUCT.unpack(buf)
 
     return {
@@ -157,9 +164,15 @@ def parse_telem(buf):
         "pyro_fired": pyro_fired,
         "sats": sats,
         "flags": flags,
+        "mcu_temp_c10": mcu_temp_c10,
+        "seq": seq,
+        "last_evt_state": last_evt_state,
+        "last_evt_count": last_evt_count,
+        "main_alt_m": main_alt_m,
         "crc16": crc,
         # engineering units
         "state_name": state_name(state),
+        "last_evt_name": state_name(last_evt_state),
         "lat_deg": lat_e7 / 1e7,
         "lon_deg": lon_e7 / 1e7,
         "alt_baro_m": alt_baro_cm / 100.0,
@@ -168,6 +181,8 @@ def parse_telem(buf):
         "accel_g": [ax / 100.0, ay / 100.0, az / 100.0],
         "gyro_dps": [gx / 10.0, gy / 10.0, gz / 10.0],
         "batt_v": batt_mv / 1000.0,
+        "mcu_temp_c": (None if mcu_temp_c10 == MCU_TEMP_NODATA
+                       else mcu_temp_c10 / 10.0),
         # flag booleans
         "gps_fix": bool(flags & FLAG_GPS_FIX),
         "accel_sat": bool(flags & FLAG_ACCEL_SAT),
@@ -175,22 +190,27 @@ def parse_telem(buf):
         "sd_ok": bool(flags & FLAG_SD_OK),
         "chg_ok": bool(flags & FLAG_CHG_OK),
         "gps_ok": bool(flags & FLAG_GPS_OK),
+        "low_batt": bool(flags & FLAG_LOW_BATT),
+        "deploy_fail": bool(flags & FLAG_DEPLOY_FAIL),
     }
 
 
 def build_telem(state=0, t_ms=0, lat_e7=0, lon_e7=0, alt_baro_cm=0,
                 alt_gps_cm=0, vel_up_cms=0, accel_g_x100=(0, 0, 0),
                 gyro_dps_x10=(0, 0, 0), batt_mv=0, pyro_cont=0,
-                pyro_fired=0, sats=0, flags=0, ptype=PKT_TELEMETRY):
-    """Build a valid 46-byte telem_packet_t from raw wire values
+                pyro_fired=0, sats=0, flags=0, mcu_temp_c10=MCU_TEMP_NODATA,
+                seq=0, last_evt_state=0, last_evt_count=0, main_alt_m=0,
+                ptype=PKT_TELEMETRY):
+    """Build a valid 54-byte telem_packet_t from raw wire values
     (useful for GS/bridge simulation and tests)."""
     ax, ay, az = accel_g_x100
     gx, gy, gz = gyro_dps_x10
-    body = struct.pack("<BBBBIiiiih3h3hHBBBB",
+    body = struct.pack("<BBBBIiiiih3h3hHBBBBhHBBH",
                        LINK_MAGIC, PROTO_VERSION, ptype, state, t_ms,
                        lat_e7, lon_e7, alt_baro_cm, alt_gps_cm,
                        vel_up_cms, ax, ay, az, gx, gy, gz,
-                       batt_mv, pyro_cont, pyro_fired, sats, flags)
+                       batt_mv, pyro_cont, pyro_fired, sats, flags,
+                       mcu_temp_c10, seq, last_evt_state, last_evt_count, main_alt_m)
     return body + struct.pack("<H", crc16_ccitt(body))
 
 

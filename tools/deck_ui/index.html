@@ -135,7 +135,27 @@
           <button class="btn" id="btn-boot">Bootloader</button>
           <button class="btn" id="btn-wdtest">WD test</button>
         </div>
+        <div class="row">
+          <label class="small" for="sleep-secs">Sleep</label>
+          <input type="number" id="sleep-secs" min="0" max="36000" step="1" placeholder="0"
+                 style="width:66px" title="seconds — 0 or blank = until RESET (SW1)">
+          <span class="small">s</span>
+          <button class="btn" id="btn-sleep">Sleep</button>
+        </div>
         <div class="out" id="out-maint"></div>
+      </div>
+
+      <div class="sec" id="sec-radio" hidden>
+        <h3>Radio</h3>
+        <div class="row">
+          <label class="small" for="txpower">TX power</label>
+          <input type="number" id="txpower" min="-9" max="22" step="1" placeholder="22" style="width:64px">
+          <span class="small">dBm</span>
+          <button class="btn" id="btn-txpower">Set</button>
+          <span class="hint" id="txpower-cur"></span>
+        </div>
+        <div class="hint" id="radio-why"></div>
+        <div class="out mono" id="radio-stats"></div>
       </div>
     </aside>
 
@@ -146,11 +166,13 @@
         <div class="tile"><div class="l">Vel</div><div class="v" id="t-vel">&mdash;</div><div class="sub">m/s up</div></div>
         <div class="tile"><div class="l">Battery</div><div class="v" id="t-batt">&mdash;</div><div class="sub" id="t-batt-sub">V</div></div>
         <div class="tile"><div class="l">Temp</div><div class="v" id="t-temp">&mdash;</div><div class="sub">&deg;C &middot; baro</div></div>
+        <div class="tile"><div class="l">MCU</div><div class="v" id="t-mcu">&mdash;</div><div class="sub">&deg;C &middot; STM32 die</div></div>
         <div class="tile"><div class="l">Continuity</div><div class="v small-v" id="t-cont">&mdash;</div><div class="sub" id="t-cont-sub">ch1</div></div>
         <div class="tile"><div class="l">GPS</div><div class="v small-v" id="t-gps">&mdash;</div><div class="sub" id="t-gps-sub">fix &middot; sats</div></div>
-        <div class="tile peak"><div class="l">Apogee</div><div class="v" id="t-apogee">&mdash;</div><div class="sub">peak &middot; m</div></div>
+        <div class="tile peak"><div class="l">Apogee</div><div class="v" id="t-apogee">&mdash;</div><div class="sub" id="t-apogee-sub">peak &middot; m</div></div>
         <div class="tile peak"><div class="l">Max vel</div><div class="v" id="t-maxvel">&mdash;</div><div class="sub">peak &middot; m/s</div></div>
         <div class="tile peak"><div class="l">Max |g|</div><div class="v" id="t-maxg">&mdash;</div><div class="sub">peak &middot; g</div></div>
+        <div class="tile peak"><div class="l">Recovery</div><div class="v small-v" id="t-recovery">&mdash;</div><div class="sub" id="t-recovery-sub">bearing &middot; dist</div></div>
       </div>
 
       <div class="sec" id="link-panel">
@@ -166,6 +188,17 @@
           <div class="meter" style="flex:1"><i id="gap-fill"></i></div>
           <span class="small mono" id="gap-txt">&mdash;</span>
         </div>
+      </div>
+
+      <div class="sec" id="fc-radio-panel" hidden>
+        <h3>Radio &mdash; FC (LoRa)</h3>
+        <div class="tiles">
+          <div class="tile"><div class="l">TX power</div><div class="v" id="t-txpower">&mdash;</div><div class="sub">dBm</div></div>
+          <div class="tile"><div class="l">Packets TX</div><div class="v" id="t-txcount">&mdash;</div><div class="sub" id="t-txcount-sub">frames</div></div>
+          <div class="tile"><div class="l">Radio</div><div class="v small-v" id="t-radiohealth">&mdash;</div><div class="sub" id="t-radiohealth-sub">tcxo</div></div>
+          <div class="tile"><div class="l">Last uplink</div><div class="v small-v" id="t-uplink">&mdash;</div><div class="sub">RSSI / SNR dB</div></div>
+        </div>
+        <div class="hint" id="fc-radio-hint"></div>
       </div>
 
       <h2 id="chart-h">Telemetry &mdash; last 30 s</h2>
@@ -249,6 +282,10 @@
         <div class="chart-card" data-buf="pyro">
           <div class="chart-head"><p class="chart-title">Pyro sense</p><span class="chart-unit">mV &middot; console only</span></div>
           <div class="chart-box" id="ch-pyro"></div>
+        </div>
+        <div class="chart-card" id="ground-track-card">
+          <div class="chart-head"><p class="chart-title">GPS ground track</p><span class="chart-unit">m &middot; pad-relative</span></div>
+          <div class="chart-box"><canvas id="ground-track" style="width:100%;height:100%;display:block"></canvas></div>
         </div>
       </div>
 

@@ -46,6 +46,11 @@ void app_init(void)
     led_set(8, 8, 8);                    /* dim white: booting */
 
     servo_init();
+    /* Park the main-release servo at SAFE (retained) immediately — servo_init
+     * centers all channels (1500 us), which for the release mechanism could be
+     * a partial release. Holds SAFE across the whole boot window until fsm_step
+     * takes over (state_machine.c drives it every control pass). */
+    servo_set_us(SERVO_DEPLOY_IDX, SERVO_SAFE_US);
     int rc_pyro  = pyro_init();
     int rc_imu   = imu_init();
     int rc_baro  = baro_init();
@@ -56,17 +61,23 @@ void app_init(void)
     telem_init();
     fsm_init();                          /* zeroes g_fsm — flags set below */
 
-    /* Persisted params (flash sector 7): override the compile-time default
-     * if a valid record exists. ONLY main_alt_m — see param_store.c for
-     * what must never be persisted. */
+    /* Persisted params (flash sector 7): override the compile-time defaults
+     * if a valid record exists. See param_store.c for what must never be
+     * persisted. Last GPS (from the previous landing) is logged for recovery. */
     {
-        uint32_t alt_cm;
-        if (param_load(&alt_cm) == 0) {
-            g_fsm.main_alt_m = (float)alt_cm / 100.0f;
-            char msg[40];
-            snprintf(msg, sizeof msg, "PARAM main_alt=%lu cm",
-                     (unsigned long)alt_cm);
+        params_t pp;
+        if (param_load(&pp) == 0) {
+            fsm_params_apply(&pp);
+            char msg[72];
+            snprintf(msg, sizeof msg, "PARAM main_alt=%lu cm apogee_to=%lu ms",
+                     (unsigned long)pp.main_alt_cm,
+                     (unsigned long)pp.apogee_timeout_ms);
             datalog_event(msg);
+            if (pp.last_lat_e7 != 0 || pp.last_lon_e7 != 0) {
+                snprintf(msg, sizeof msg, "LAST GPS lat=%ld lon=%ld e7 (recovery)",
+                         (long)pp.last_lat_e7, (long)pp.last_lon_e7);
+                datalog_event(msg);
+            }
         }
     }
 

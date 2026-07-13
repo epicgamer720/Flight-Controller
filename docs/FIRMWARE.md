@@ -5,6 +5,10 @@ planned **RP2040 ground station**, linked over **915 MHz LoRa** (SX1262 on both 
 `shared/protocol.h` is the wire contract for both boards; `CLAUDE.md` has the full
 design context and safety rules; `docs/PINMAP.md` is the authoritative pin map.
 
+> **Status:** SIL/host-tested, builds clean, and flashed + bench-verified on hardware —
+> **not yet flight-tested.** Flight thresholds in `App/app_config.h` are still defaults;
+> tune them (and the mount knobs flagged below) to the motor/airframe before flying.
+
 ## Build
 
 No SWD on this board — everything goes through USB (CDC console + DFU flashing).
@@ -39,24 +43,28 @@ works too — see `docs/PINMAP.md`.)
 | Command | Does |
 |---|---|
 | `help` | command list |
-| `status` | state / armed / alt / vel / batt / flags / health |
+| `status` | state / armed / alt / vel / batt / **MCU die-temp** / flags / health / pyro |
+| `preflight` | GO/NO-GO checklist before arming (read-only — nothing is pulsed) |
 | `sensors` | raw IMU + baro |
-| `gps` | last GPS fix |
+| `gps` | last GPS fix + persisted last-landing fix |
 | `servo <1-4> <500-2500>` | set servo pulse (µs) |
-| `arm` / `disarm` | arming gate / disarm |
+| `arm` / `disarm` | arming gate (prints refusal code `-1`..`-8`) / disarm |
 | `testen <on\|off>` | pad test mode (GROUND_IDLE only; always boots **off**) |
 | `fire <ch> <hex-code>` | pad test fire (testen + passcode gated) |
 | `zero` | zero baro AGL |
 | `mainalt <m>` | set main deploy altitude — persisted to flash |
+| `apogee <ms>` | set apogee / backup-deploy timer (per-motor) — persisted to flash |
 | `log <stat\|start\|stop>` | SD logging (stat shows drops + ring high-water) |
-| `cal` | pad gyro bias cal (~2 s, keep still) |
+| `cal` | pad gyro bias cal (~2 s, keep still — rejected if it moves) |
 | `radio` | radio health + re-init / TX-timeout counters |
 | `radiodbg` | raw SX1262 hardware probe (BUSY/reset/SPI bytes) |
+| `tx [power\|mon\|cw\|frame]` | TX dashboard; set power / packet monitor / bench CW / force a frame |
 | `i2cscan` | scan I2C1 for devices |
 | `charge` | BQ25883 charger status |
 | `bootloader` | reboot into USB DFU |
 | `reboot` | reset MCU |
 | `wdtest` | deliberate hang — IWDG must reset the board in ~4 s |
+| `sleep [s]` | STOP-mode low power (ground + disarmed); wakes on RTC timer or RESET; 0/none = until RESET |
 
 ## Tools (`tools/`)
 
@@ -128,15 +136,59 @@ Without it, a battery sag or pyro-fire droop can leave the F7 running erraticall
 (corrupting flash/SD writes) instead of resetting cleanly. Option bytes live
 outside program flash, so this survives reflashing — do it once per board.
 
+## Safety & flight logic
+
+Every pyro decision is made in `App/state_machine.c` and only there — radio commands can
+never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are defaults.
+
+- **Arming gate** (`fsm_request_arm`) requires *all* of: `ST_GROUND_IDLE`, IMU + baro
+  healthy, gyro cal done, near-zero velocity, plausible |accel|, **pyro continuity**,
+  **battery ≥ `ARM_MIN_VBAT_MV` (7.0 V)**, and **vertical orientation**. On refusal it
+  returns a code the console prints in English: `-1` not idle, `-2` imu/baro, `-3` gyro
+  cal, `-4` moving, `-5` accel implausible, `-6` no pyro continuity, `-7` battery low,
+  `-8` not vertical. Orientation keys off `ARM_UP_AXIS`/`ARM_UP_SIGN` (default +Z — a
+  **mount knob**); a wrong axis safely *refuses* with `-8`, it never misfires. `preflight`
+  shows the same checks as a GO/NO-GO list without arming.
+- **Fault-independent backup deploy**: once launched, the single charge fires at
+  `apogee_timeout_ms` after launch **even in `ST_FAULT`** with dead sensors — it bypasses
+  the armed gate through one controlled path (`pyro_fire_backup`). Fires at most once,
+  never on the pad and never after landing; a deploy pulse is aborted **only** by a ground
+  disarm, never truncated by an in-flight fault. This is the anti-lawn-dart last line — set
+  `apogee` to just past expected apogee per motor (clamped to `[MAX_BURN_MS, 120000]` so it
+  can't fire under thrust).
+- **Servo main-release** (this board has one pyro channel, fired at apogee; a servo releases
+  the main): held SAFE through all ascent and through `ST_FAULT`, released only at the guarded
+  DROGUE→MAIN point (descending AND AGL ≤ `main_alt`, upward velocity inhibited). Parked SAFE
+  at boot before the first control pass. `SERVO_SAFE_US`/`SERVO_RELEASE_US` are **mount knobs**.
+- **Sensor guards**: gyro cal is rejected if the vehicle moves during it (per-axis gyro
+  peak-to-peak + accel-stray band → auto-restart, so a bad bias never latches); IMU reads
+  detect a frozen/stuck bus (rail bytes, or N byte-identical bursts) and fail, tripping the
+  0.5 s IMU-fail debounce → `ST_FAULT`; baro altitude is temperature-compensated (pad temp
+  latched at `zero`).
+- **Fault handling**: a *ground* fault (never launched) self-heals back to `ST_INIT` once
+  both sensors read healthy again (re-runs gyro cal + baro zero); any *in-flight* fault
+  latches — logging + telemetry keep running, pyros safe, the backup timer still armed.
+- **Anti-replay**: 32-deep nonce dedup ring with **no** monotonic floor — the GS reseeds its
+  nonce randomly on restart, so a floor would permanently lock out a restarted GS.
+
 ## Firmware notes
 
 - **IWDG ~4 s** is armed at the end of init and refreshed once per superloop pass;
   any hang reboots the MCU (reset cause is printed in the boot banner). `wdtest`
   proves it end-to-end.
-- **`main_alt` persists** in flash **sector 7 @ `0x08060000`** (append-record store,
-  `App/param_store.c`). Code flash is capped at **384 KB** in the linker so an
-  oversized image fails at link instead of clobbering the store. Only `main_alt`
-  is persisted — `testen` always boots off by design.
+- **Config persists** in flash **sector 7 @ `0x08060000`** (append-record store **v2**,
+  `App/param_store.c`): 28-byte slots holding `main_alt`, the runtime `apogee_timeout`,
+  and the last landing GPS fix (recovery aid). Migrates cleanly from the old 16-byte v1
+  (mismatched records are skipped, then appended past). Code flash is capped at **384 KB**
+  in the linker so an oversized image fails at link instead of clobbering the store.
+  **Never persisted** by design: `testen` (boots off), gyro bias, baro zero — all re-done
+  each pad session.
+- **Telemetry is protocol v3** (`PROTO_VERSION 3`, 54-byte `telem_packet_t` in
+  `shared/protocol.h`): per-frame `seq` (host computes packet-delivery ratio), a last-event
+  echo (`last_evt_state` + `last_evt_count`, so a dropped `PKT_EVENT` still surfaces), and a
+  `main_alt` read-back; plus `FLAG_LOW_BATT` and `FLAG_DEPLOY_FAIL` status bits. FC and GS
+  must compile the same `protocol.h`. `CMD_SET_TX_POWER` sets TX power over the air (pad-only,
+  like every uplink command).
 - **64 KB SD log ring** (~4.8 s of 200 Hz records); `log stat` reports drops and
   ring high-water.
 - `log start` failure codes: `-1` no card, `-2` link, `-3` mount, `-4` scan,
@@ -151,8 +203,8 @@ outside program flash, so this survives reflashing — do it once per board.
 | ARMED | solid red |
 | BOOST / COAST | magenta |
 | APOGEE / DROGUE / MAIN / DESCENT | cyan |
-| LANDED | slow green blink |
-| FAULT | fast red blink |
+| LANDED | bright green recovery strobe (~1/s) |
+| FAULT | bright red recovery strobe (~1/s) |
 | SD not logging | blue flash once per second (overlays any state) |
 
 Bench test: `led <r> <g> <b>` shows a raw color for 5 s (`led auto` resumes

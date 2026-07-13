@@ -9,6 +9,7 @@
  *   battWarn     low-battery warning   (deck.js gates at <= 7.0 V, 2S)
  *   battCrit     low-battery critical  (deck.js gates at <= 6.6 V)
  *   nakBlip      short low buzz on a NAK / refusal
+ *   linkStale    descending double blip when telemetry goes stale (link lost)
  *   countTick    fire-hold countdown tick (every 0.5 s of the 2 s hold)
  *   fireSend     confirmation sweep when the hold completes and the
  *                command is actually posted
@@ -69,6 +70,13 @@ const DeckAudio = (function(){
     nakBlip(){
       if (!ctx || muted) return;
       tone(196, now(), 0.18, 'square', 0.5);
+    },
+
+    linkStale(){                  // telemetry gone quiet: descending double blip
+      if (!ctx || muted) return;
+      const t = now();
+      tone(880, t, 0.10, 'triangle', 0.7);
+      tone(440, t + 0.13, 0.22, 'triangle', 0.7);
     },
 
     battWarn(){

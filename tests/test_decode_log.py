@@ -6,6 +6,7 @@ inter-record garbage, asserting decode counts and resync behavior."""
 import os
 import struct
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -136,6 +137,105 @@ class TestDecodeCorruption(unittest.TestCase):
         self.assertEqual(crc_bad, 0)
         self.assertEqual(len(rows.rows), 0)
         self.assertEqual(skipped + tail, 200)
+
+
+def build_rec(state, t_ms, agl_m, vel_ms, pyro_fired=0,
+              ax=0.0, ay=0.0, az=1.0, flags=0):
+    """One valid 68-byte record with exact (un-nudged) t_ms, for the
+    iter_records()/summarize() tests where byte-level resync counts don't
+    matter and exact values do."""
+    body = REC.pack(MAGIC, state, flags, t_ms,
+                    ax, ay, az, 0.0, 0.0, 0.0,      # accel / gyro
+                    101325.0, 20.0, agl_m, vel_ms,  # press temp agl vel
+                    0, 0, 0,                         # lat lon alt_gps
+                    0, 0, pyro_fired, 0,             # sats cont fired pad
+                    7000, 0)                         # batt_mv, crc placeholder
+    crc = decode_log.crc16_ccitt(body[:decode_log.CRC_LEN])
+    return body[:decode_log.CRC_LEN] + struct.pack("<H", crc)
+
+
+# A tiny nominal flight: pad -> boost -> coast -> apogee -> drogue -> main ->
+# descent -> landed. Drogue fires at apogee (healthy); main descends.
+FLIGHT = [
+    build_rec(1, 0,     0.0,   0.0),                    # GROUND_IDLE
+    build_rec(3, 1000,  50.0,  80.0),                   # BOOST
+    build_rec(3, 2000,  200.0, 100.0),                  # BOOST (max vel)
+    build_rec(4, 3000,  400.0, 40.0),                   # COAST
+    build_rec(4, 4000,  480.0, 5.0),                    # COAST
+    build_rec(5, 5000,  500.0, -1.0),                   # APOGEE (max AGL)
+    build_rec(6, 5100,  499.0, -3.0, pyro_fired=0x01),  # DROGUE, first fire
+    build_rec(6, 7000,  250.0, -15.0, pyro_fired=0x01),
+    build_rec(7, 8000,  150.0, -8.0, pyro_fired=0x03),  # MAIN (descending)
+    build_rec(8, 10000, 40.0,  -6.0, pyro_fired=0x03),  # DESCENT
+    build_rec(9, 12000, 0.0,   0.0,  pyro_fired=0x03),  # LANDED
+]
+
+
+class TestIterRecords(unittest.TestCase):
+    def test_yields_records_from_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "LOG001.BIN")
+            with open(path, "wb") as f:
+                f.write(b"".join(FLIGHT))
+            recs = list(decode_log.iter_records(path))
+        self.assertEqual(len(recs), len(FLIGHT))
+        self.assertEqual([r["state"] for r in recs],
+                         [1, 3, 3, 4, 4, 5, 6, 6, 7, 8, 9])
+        self.assertEqual(recs[0]["rec"], 0)
+        self.assertEqual(recs[-1]["rec"], len(FLIGHT) - 1)
+        self.assertEqual(recs[5]["agl_m"], 500.0)      # apogee record
+        self.assertEqual(recs[6]["pyro_fired"], 0x01)  # first fire
+
+
+class TestSummary(unittest.TestCase):
+    def test_nominal_flight(self):
+        recs = [decode_log._record_dict(i, REC.unpack(r))
+                for i, r in enumerate(FLIGHT)]
+        s = decode_log.summarize(recs)
+        self.assertEqual(s["n_records"], 11)
+        self.assertEqual(s["apogee_m"], 500.0)
+        self.assertEqual(s["max_vel_ms"], 100.0)
+        self.assertEqual(s["fire_t_ms"], 5100)
+        self.assertEqual(s["fire_agl_m"], 499.0)
+        # phase durations from state transitions
+        self.assertEqual(s["burn_ms"], 2000)     # BOOST 1000->3000
+        self.assertEqual(s["coast_ms"], 2000)    # COAST 3000->5000
+        self.assertEqual(s["descent_ms"], 6900)  # DROGUE+MAIN+DESCENT
+        # healthy flight: no warnings (fire near apogee, main descending)
+        self.assertEqual(s["warnings"], [])
+
+    def test_summary_via_iter_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "LOG001.BIN")
+            with open(path, "wb") as f:
+                f.write(b"".join(FLIGHT))
+            s = decode_log.summarize(decode_log.iter_records(path))
+        self.assertEqual(s["apogee_m"], 500.0)
+        self.assertEqual(s["fire_t_ms"], 5100)
+
+    def test_warnings(self):
+        # First pyro fires at 100 m, far below the 500 m apogee, AND a MAIN
+        # marker appears while still ascending (vel > 0). Both should warn.
+        flight = [
+            build_rec(3, 0,    200.0, 90.0),
+            build_rec(5, 1000, 500.0, -1.0),
+            build_rec(6, 1100, 100.0, -5.0, pyro_fired=0x01),  # fired low
+            build_rec(7, 1200, 480.0, 12.0, pyro_fired=0x03),  # MAIN ascending
+        ]
+        recs = [decode_log._record_dict(i, REC.unpack(r))
+                for i, r in enumerate(flight)]
+        s = decode_log.summarize(recs)
+        self.assertEqual(len(s["warnings"]), 2)
+        joined = " ".join(s["warnings"])
+        self.assertIn("below apogee", joined)
+        self.assertIn("ascending", joined)
+
+    def test_accel_saturation_note(self):
+        flight = [build_rec(3, 0, 10.0, 50.0, az=16.0)]  # az at the 16 g rail
+        recs = [decode_log._record_dict(0, REC.unpack(flight[0]))]
+        s = decode_log.summarize(recs)
+        self.assertTrue(s["accel_saturated"])
+        self.assertGreaterEqual(s["max_accel_g"], 16.0)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ const STATE_NAMES = ['INIT', 'GROUND_IDLE', 'ARMED', 'BOOST', 'COAST',
 const STATE_TONE = ['idle', 'good', 'warn', 'flight', 'flight', 'flight',
                     'flight', 'flight', 'flight', 'good', 'crit'];
 const PAD_STATES = [0, 1, 2];           // telemetry.c on_pad()
-const SERIES = ['alt', 'vel', 'accel', 'gyro', 'batt', 'rssi', 'snr', 'rate', 'pyro'];
+const SERIES = ['alt', 'vel', 'accel', 'gyro', 'batt', 'rssi', 'snr', 'rate', 'pyro', 'position'];
 const BATT_WARN_V = 7.0, BATT_CRIT_V = 6.6;   // 2S thresholds (tile + audio)
 const MAINALT_MIN = 30, MAINALT_MAX = 2000;   // radio-path bound, UI-enforced
 
@@ -54,17 +54,22 @@ new CanvasChart('ch-pyro',  { buf:'pyro',  cols:[1],     names:['mV'],
   scale:1, minSpan:50,  dec:0, label:'Pyro sense millivolts',
   emptyMsg:'console only — no pyro sense on this source' });
 new StateTimeline('timeline-box');
+const groundTrack = new GroundTrack($('ground-track'));
 
 /* ---------- client session state ---------- */
 let srcKind = null, srcPort = null, connected = false;
 let caps = {}, latest = {}, peaks = {}, counters = {};
 let recInfo = { on: false, path: null, rows: 0 };
 let gap = null;
+let recovery = null;              // {distance_m, bearing_deg, pad_lat, pad_lon}
+let sat = null;                   // {ready, half_m, url} pad satellite tile, or null
+let satImg = null, satUrl = null, satLoaded = false;   // cached tile Image
 let eseq = -1, lastNow = -1;
 let ackCount = 0, nakCount = 0;
 let gsTesten = false;              // UI-local only — real testen unknown over radio
 let replayPaused = false;
 let battWarned = false, battCrited = false;
+let staleAlarmed = false;         // telemetry-loss alarm hysteresis
 let evFilter = 'all';
 const FILTER_KINDS = {
   cmd:   ['cmd_sent', 'ack', 'nak', 'refusal'],
@@ -82,6 +87,9 @@ function resetClient(){
   gsTesten = false;
   replayPaused = false;
   battWarned = battCrited = false;
+  staleAlarmed = false;
+  recovery = null;
+  sat = null; satImg = null; satUrl = null; satLoaded = false;
   $('ev-body').innerHTML = '';
   $('ev-count').textContent = '';
   $('pyro-result').textContent = '';
@@ -220,6 +228,8 @@ function handleData(d){
   counters = d.counters || {};
   recInfo = d.rec || recInfo;
   gap = (d.gap === undefined) ? null : d.gap;
+  recovery = d.recovery || null;
+  sat = d.sat || null;
 
   const lt = (d.tplus && d.tplus.launch_t_host !== undefined)
     ? d.tplus.launch_t_host : null;
@@ -232,14 +242,18 @@ function handleData(d){
   renderHeader();
   renderTiles();
   renderLink();
+  renderRadio();
   renderRail();
   renderPyro();
   renderCards();
+  renderGroundTrack();
 }
 
 function onSourceKind(){
   $('replay-ctl').hidden = srcKind !== 'replay';
   $('gs-testen-warn').hidden = srcKind !== 'gs';
+  $('sec-radio').hidden = !(srcKind === 'fc' || srcKind === 'gs');
+  $('fc-radio-panel').hidden = srcKind !== 'fc';   // FC's own LoRa radio tiles
 }
 
 /* ---------- /events ---------- */
@@ -390,10 +404,63 @@ function renderHeader(){
   $('rec-path').textContent = recInfo.path ? 'session: ' + recInfo.path : '';
 }
 
+function compass(deg){
+  return ['N','NE','E','SE','S','SW','W','NW'][Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+}
+function fmtDist(m){
+  if (m === null || m === undefined) return '—';
+  return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
+}
+
+/* GPS ground track (9b): project the recorded position buffer (raw lat/lon)
+ * to local east/north metres around the first fix, mark the apogee (max baro
+ * alt among fixes), and hand it to the equal-aspect GroundTrack canvas. */
+/* Satellite pad tile: cache one Image keyed on its url (same-origin /sat
+ * route, no CORS). Reloads only when the url changes. Returns the draw() bg
+ * arg only once the image is fully loaded; null before/while loading or on
+ * error -> plain grid. */
+function satBg(){
+  if (!(sat && sat.ready && sat.url)) return null;
+  if (sat.url !== satUrl){
+    satUrl = sat.url; satLoaded = false;
+    satImg = new Image();
+    satImg.onload = () => { satLoaded = true; renderGroundTrack(); };
+    satImg.onerror = () => { satLoaded = false; };
+    satImg.src = sat.url;
+  }
+  return (satLoaded && satImg) ? { img: satImg, halfM: sat.half_m } : null;
+}
+
+function renderGroundTrack(){
+  const rows = buffers.position;
+  if (!rows || !rows.length){ groundTrack.draw([], -1); return; }
+  // Origin = the frozen pad fix (recovery.pad_*, which survives the 130 s
+  // rolling-window trim), so the pad marker + projection stay correct even for
+  // flights longer than the window; fall back to the first buffered fix before
+  // a pad is known. (apogee marker is best-effort: max baro alt among buffered
+  // fixes — for a >130 s flight the true apogee fix may have aged out.)
+  let lat0, lon0, padKnown = false;
+  if (recovery && recovery.pad_lat != null && recovery.pad_lon != null){
+    lat0 = recovery.pad_lat; lon0 = recovery.pad_lon; padKnown = true;
+  } else {
+    lat0 = rows[0][1]; lon0 = rows[0][2];
+  }
+  const k = 111320, cosLat = Math.cos(lat0 * Math.PI / 180);
+  const points = rows.map(r => [(r[2] - lon0) * k * cosLat, (r[1] - lat0) * k]);
+  let ai = -1, amax = -Infinity;
+  for (let i = 0; i < rows.length; i++){
+    const a = rows[i][3];
+    if (a !== null && a !== undefined && a > amax){ amax = a; ai = i; }
+  }
+  if (padKnown){ points.unshift([0, 0]); if (ai >= 0) ai += 1; }  // pad at the true pad
+  groundTrack.draw(points, ai, satBg());
+}
+
 function renderTiles(){
   $('t-alt').textContent = fmt(latest.alt_baro_m, 1);
   $('t-vel').textContent = fmt(latest.vel_up_ms, 1);
   $('t-temp').textContent = fmt(latest.temp_c, 1);   // baro die temp; fc only
+  $('t-mcu').textContent = fmt(latest.mcu_temp_c, 1); // STM32 die temp; fc only
 
   const v = latest.batt_v;
   const bv = $('t-batt'), bs = $('t-batt-sub');
@@ -431,8 +498,27 @@ function renderTiles(){
   }
 
   $('t-apogee').textContent = fmt(peaks.apogee_m, 1);
+  // baro-vs-GPS apogee divergence (7d): a large delta flags a bad baro zero,
+  // a stuck baro, or GPS multipath.
+  const ab = peaks.apogee_m, ag = peaks.apogee_gps_m, asub = $('t-apogee-sub');
+  if (ab !== null && ab !== undefined && ag !== null && ag !== undefined){
+    const dv = ab - ag;
+    asub.textContent = 'GPS Δ ' + (dv >= 0 ? '+' : '') + dv.toFixed(0) + ' m';
+    asub.className = Math.abs(dv) > 30 ? 'sub warn' : 'sub';
+  } else {
+    asub.textContent = 'peak · m'; asub.className = 'sub';
+  }
   $('t-maxvel').textContent = fmt(peaks.max_vel_ms, 1);
   $('t-maxg').textContent = fmt(peaks.max_abs_g, 2);
+  // recovery bearing + distance from the frozen pad fix (7a)
+  const rc = $('t-recovery'), rs = $('t-recovery-sub');
+  if (recovery){
+    rc.textContent = Math.round(recovery.bearing_deg) + '° ' + compass(recovery.bearing_deg);
+    rs.textContent = fmtDist(recovery.distance_m);
+    rc.className = 'v small-v ok';
+  } else {
+    rc.textContent = '—'; rc.className = 'v small-v'; rs.textContent = 'bearing · dist';
+  }
 }
 
 function renderLink(){
@@ -457,6 +543,57 @@ function renderLink(){
     fill.style.width = Math.min(100, gap / crit * 100).toFixed(1) + '%';
     fill.className = gap > crit ? 'bad' : (gap > warn ? 'meh' : '');
     txt.textContent = gap.toFixed(1) + ' s' + (gap > crit ? ' ⚠ stale' : '');
+    /* telemetry-loss alarm (7b): blip once on the rising edge into stale,
+     * re-arm when the link recovers (battAudio-style hysteresis). */
+    if (gap > crit){
+      if (!staleAlarmed){ staleAlarmed = true; DeckAudio.linkStale(); }
+    } else if (gap <= warn){
+      staleAlarmed = false;
+    }
+  }
+}
+
+/* Radio section: TX power control on both paths.
+ *  - FC (USB): live `tx` dashboard scrape — power, packets tx/rx, last-RX
+ *    link quality (the 'GS link' panel is downlink-as-seen-by-the-GS).
+ *  - GS (radio): the control sends CMD_SET_TX_POWER over the air; the FC
+ *    doesn't report its own power back, so no live readout. */
+function renderRadio(){
+  if (srcKind !== 'fc' && srcKind !== 'gs') return;   // control hidden otherwise
+  /* TX-power SET control gating (both paths) — command results own
+   * #radio-stats, so this never overwrites them per frame. */
+  const why = cmdReason('power');
+  const btn = $('btn-txpower'), inp = $('txpower');
+  if (!btn.classList.contains('busy')){ btn.disabled = !!why; inp.disabled = !!why; }
+  $('radio-why').textContent = why ||
+    (srcKind === 'gs' ? 'over-air — FC applies on its next pad RX window' : '');
+  const p = latest.tx_power_dbm;
+  $('txpower-cur').textContent = (p == null) ? '' : 'now ' + p + ' dBm';
+  if (srcKind !== 'fc') return;   // downlink RSSI/SNR/rate live in the GS-link panel
+
+  /* FC's own LoRa radio (read over SPI, scraped from the `tx` console cmd) */
+  $('t-txpower').textContent = (p == null) ? '—' : p;
+  $('t-txcount').textContent = (latest.tx_count == null) ? '—' : latest.tx_count;
+  $('t-txcount-sub').textContent =
+    'sent · rx ' + (latest.rx_count == null ? 0 : latest.rx_count);
+  const ok = latest.radio_ok;
+  const rh = $('t-radiohealth');
+  rh.textContent = (ok == null) ? '—' : (ok ? '● OK' : '○ FAIL');
+  rh.className = 'v small-v' + (ok ? ' ok' : (ok === false ? ' crit' : ''));
+  $('t-radiohealth-sub').textContent = 'tcxo ' + (latest.radio_tcxo || '?') +
+    ' · reinit ' + (latest.radio_reinit == null ? 0 : latest.radio_reinit);
+  const up = $('t-uplink');
+  if (latest.rx_rssi == null){
+    up.textContent = '—';
+    up.className = 'v small-v';
+    $('fc-radio-hint').textContent =
+      'FC broadcasts telemetry on cadence (1 Hz on the pad) into the air — no ' +
+      'receiver needed, so Packets TX climbs on its own. RSSI/SNR here are of ' +
+      'uplink commands the FC hears; downlink link quality is measured on the GS.';
+  } else {
+    up.textContent = latest.rx_rssi + ' / ' + (latest.rx_snr == null ? '—' : latest.rx_snr);
+    up.className = 'v small-v ok';
+    $('fc-radio-hint').textContent = '';
   }
 }
 
@@ -464,7 +601,8 @@ const CMD_BTNS = [
   ['arm', 'btn-arm'], ['disarm', 'btn-disarm'], ['zero', 'btn-zero'],
   ['cal', 'btn-cal'], ['mainalt', 'btn-mainalt'],
   ['log', 'btn-log-start'], ['log', 'btn-log-stop'],
-  ['reboot', 'btn-reboot'], ['bootloader', 'btn-boot'], ['wdtest', 'btn-wdtest']
+  ['reboot', 'btn-reboot'], ['bootloader', 'btn-boot'], ['wdtest', 'btn-wdtest'],
+  ['sleep', 'btn-sleep']
 ];
 function renderRail(){
   for (const [name, id] of CMD_BTNS){
@@ -688,6 +826,16 @@ $('btn-mainalt').addEventListener('click', () => {
           res => { $('out-pad').textContent = resultText(res); });
 });
 
+$('btn-txpower').addEventListener('click', () => {
+  const dbm = parseInt($('txpower').value, 10);
+  if (!(dbm >= -9 && dbm <= 22)){
+    $('radio-stats').textContent = 'TX power must be -9..22 dBm';
+    return;
+  }
+  postCmd('power', { dbm: dbm }, $('btn-txpower'),
+          res => { $('radio-stats').textContent = resultText(res); });
+});
+
 $('btn-log-start').addEventListener('click', () =>
   postCmd('log', { op: 'start' }, $('btn-log-start'),
           res => { $('out-maint').textContent = resultText(res); }));
@@ -719,6 +867,23 @@ $('btn-wdtest').addEventListener('click', () =>
     () => postCmd('wdtest', {}, $('btn-wdtest'),
                   res => { $('out-maint').textContent = resultText(res); }),
     'Halt for WD'));
+$('btn-sleep').addEventListener('click', () => {
+  const raw = $('sleep-secs').value.trim();
+  const secs = raw === '' ? 0 : parseInt(raw, 10);
+  if (!(secs >= 0 && secs <= 36000)){
+    $('out-maint').textContent = 'sleep seconds must be 0..36000 (0 = until RESET)';
+    return;
+  }
+  const wake = secs > 0
+    ? 'auto-wakes and reboots in ~' + secs + ' s'
+    : 'stays asleep until you press RESET (SW1)';
+  showConfirm('Sleep the FC?',
+    '<p>The FC enters STOP mode: the USB console <b>drops</b> and telemetry ' +
+    'stops. It ' + wake + '. Pyros are disarmed and the SD log is closed first.</p>',
+    () => postCmd('sleep', { secs: secs }, $('btn-sleep'),
+                  res => { $('out-maint').textContent = resultText(res); }),
+    'Sleep');
+});
 
 $('btn-testen').addEventListener('click', () => {
   if (srcKind === 'gs'){

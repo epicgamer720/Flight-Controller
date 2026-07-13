@@ -65,3 +65,29 @@
 #else
 #define GS_PINS_VALID 1
 #endif
+
+/* ============================================================
+ * NAMED DEV-BOARD PROFILE (DEFERRED / UNTESTED) —
+ *   "Pico + generic SX1262 breakout", hand-wired for early bring-up.
+ *
+ * This is an EXAMPLE wiring recipe, not the GS PCB, and it is NOT active:
+ * it is commentary only, so it cannot flip GS_PINS_VALID and let the
+ * sketch touch the radio on bogus pins. On a hand-wired breakout YOU pick
+ * the RP2040 GPIOs, so the numbers below are a CHOICE, not a schematic
+ * fact — but the real GS board's pins still come from ITS schematic (§0).
+ * To try it on a breakout: copy these values up into the -1 defines above
+ * and rebuild. Do NOT apply it to the GS PCB. Never compiled or run here.
+ *
+ * All GPIOs below sit on RP2040 SPI0 (see the muxing note above):
+ *   GS_PIN_SPI_SCK      2   SPI0 SCK
+ *   GS_PIN_SPI_MOSI     3   SPI0 TX  -> SX1262 MOSI
+ *   GS_PIN_SPI_MISO     4   SPI0 RX  <- SX1262 MISO
+ *   GS_PIN_LORA_NSS     5   -> SX1262 NSS      / * TODO: confirm from schematic * /
+ *   GS_PIN_LORA_NRESET  6   -> SX1262 NRESET   / * TODO: confirm from schematic * /
+ *   GS_PIN_LORA_BUSY    7   <- SX1262 BUSY     / * TODO: confirm from schematic * /
+ *   GS_PIN_LORA_DIO1    8   <- SX1262 DIO1     / * TODO: confirm from schematic * /
+ * PE4259 RF switch: no GPIO — driven by SX1262 DIO2 (setDio2AsRfSwitch(true)).
+ * GS_RADIO_TCXO: still unknown on the GS chip — the TCXO/XTAL auto-fallback
+ * in ground-station/CLAUDE.md ("Deferred / untested work", item 2) resolves it
+ * at runtime rather than hard-coding a guess here.
+ * ============================================================ */

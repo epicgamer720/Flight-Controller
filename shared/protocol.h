@@ -24,8 +24,9 @@
 
 /* ---- Protocol ---- */
 #define LINK_MAGIC    0x52   /* 'R' */
-#define PROTO_VERSION 1
+#define PROTO_VERSION 3      /* v3: +seq, last_evt_state/count, main_alt_m echo (54 B) */
 #define NUM_PYRO      1      /* confirmed from schematic: gate PB13 (Q2 AO3400A), sense PC1 */
+#define MCU_TEMP_NODATA (-32768)  /* mcu_temp_c10 sentinel: die-temp read failed */
 
 typedef enum {
     PKT_TELEMETRY = 0x01,
@@ -46,6 +47,8 @@ typedef enum {
 #define FLAG_SD_OK     (1u<<3)
 #define FLAG_CHG_OK    (1u<<4)   /* charger init healthy (BQ25883) */
 #define FLAG_GPS_OK    (1u<<5)   /* GPS UART init healthy (module may still lack fix) */
+#define FLAG_LOW_BATT  (1u<<6)   /* vbat below ARM_MIN_VBAT_MV */
+#define FLAG_DEPLOY_FAIL (1u<<7) /* continuity persisted after fire+retry (charge did not go) */
 
 typedef struct __attribute__((packed)) {
     uint8_t  magic;          /* LINK_MAGIC */
@@ -65,12 +68,18 @@ typedef struct __attribute__((packed)) {
     uint8_t  pyro_fired;     /* fired bitfield */
     uint8_t  sats;
     uint8_t  flags;          /* FLAG_* */
+    int16_t  mcu_temp_c10;   /* STM32 internal die temp, deg C * 10; MCU_TEMP_NODATA if unread */
+    uint16_t seq;            /* v3: TX frame counter (wraps) -> host packet-delivery ratio */
+    uint8_t  last_evt_state; /* v3: flight_state_t of the most recent PKT_EVENT (echo) */
+    uint8_t  last_evt_count; /* v3: total PKT_EVENTs emitted (wraps) -> missed-event detect */
+    uint16_t main_alt_m;     /* v3: configured main-deploy AGL (m), read-back before arm */
     uint16_t crc16;          /* CRC16-CCITT over all preceding bytes */
 } telem_packet_t;
 
 typedef enum {
     CMD_NOP = 0, CMD_ARM, CMD_DISARM, CMD_TEST_FIRE,
-    CMD_SET_MAIN_ALT, CMD_ZERO_BARO, CMD_REBOOT, CMD_ENTER_BOOTLOADER
+    CMD_SET_MAIN_ALT, CMD_ZERO_BARO, CMD_REBOOT, CMD_ENTER_BOOTLOADER,
+    CMD_SET_TX_POWER   /* arg = signed dBm (-9..22); pad-only via RX window */
 } command_id_t;
 
 typedef struct __attribute__((packed)) {
