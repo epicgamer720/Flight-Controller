@@ -8,7 +8,9 @@
 #include "app.h"
 #include <string.h>
 
-#define NONCE_HIST 8
+#define NONCE_HIST 32               /* replay-dedup depth: a captured command
+                                     * cannot be re-accepted for this many
+                                     * distinct newer commands */
 #define EVQ_LEN    8                /* PKT_EVENT queue depth (drop-oldest) */
 
 static uint32_t s_last_tx_ms;
@@ -16,14 +18,24 @@ static bool     s_tx_pending;       /* radio_send issued, TxDone not seen  */
 static bool     s_rx_open;          /* pad RX window currently armed       */
 static uint32_t s_nonce[NONCE_HIST];
 static uint8_t  s_nonce_idx;
+static uint8_t  s_nonce_cnt;        /* valid entries (saturates at HIST)   */
 static uint32_t s_last_reinit_ms;   /* pacing for on-ground radio re-init  */
 static uint32_t s_reinit_attempts;
 static uint32_t s_tx_timeouts;      /* stuck-TX force-clears (lost TxDone) */
+static uint32_t s_tx_count;         /* frames handed to radio_send OK      */
+static uint32_t s_rx_count;         /* frames pulled off the radio (any)   */
+static bool     s_monitor;          /* live per-packet console print       */
+static uint32_t s_cw_until_ms;      /* 0 = normal; else CW carrier auto-off */
+static uint16_t s_seq;              /* v3: outbound frame counter (PDR)     */
+static uint8_t  s_last_evt_state;   /* v3: state of most recent PKT_EVENT   */
+static uint8_t  s_evt_count;        /* v3: total PKT_EVENTs emitted         */
 
 /* Pending PKT_EVENT states. Free-running uint8_t indices (EVQ_LEN divides
  * 256); telem_poll drains at most one per pass, ahead of cadence frames. */
 static uint8_t  s_evq[EVQ_LEN];
 static uint8_t  s_evq_head, s_evq_tail;
+
+static int send_packet_type(uint8_t type, uint8_t state_field);
 
 void telem_init(void)
 {
@@ -31,17 +43,71 @@ void telem_init(void)
     s_tx_pending = false;
     s_rx_open    = false;
     s_nonce_idx  = 0;
+    s_nonce_cnt  = 0;
     memset(s_nonce, 0, sizeof s_nonce);
     s_last_reinit_ms  = 0;
     s_reinit_attempts = 0;
     s_tx_timeouts     = 0;
+    s_tx_count = s_rx_count = 0;
+    s_monitor      = false;
+    s_cw_until_ms  = 0;
     s_evq_head = s_evq_tail = 0;
+    s_seq = 0;
+    s_last_evt_state = 0;
+    s_evt_count = 0;
 }
 
 void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts)
 {
     if (tx_timeouts)     *tx_timeouts     = s_tx_timeouts;
     if (reinit_attempts) *reinit_attempts = s_reinit_attempts;
+}
+
+void telem_stats(uint32_t *tx, uint32_t *rx)
+{
+    if (tx) *tx = s_tx_count;
+    if (rx) *rx = s_rx_count;
+}
+
+void telem_monitor(bool on)        { s_monitor = on; }
+bool telem_monitor_active(void)    { return s_monitor; }
+bool telem_cw_active(void)         { return s_cw_until_ms != 0; }
+
+static const char *pkt_name(uint8_t t)
+{
+    switch (t) {
+    case PKT_TELEMETRY: return "TELEM";
+    case PKT_EVENT:     return "EVENT";
+    case PKT_ACK:       return "ACK";
+    case PKT_COMMAND:   return "CMD";
+    default:            return "?";
+    }
+}
+
+/* Bench carrier for supply-current / power checks. secs=0 stops. Suspends
+ * normal traffic while up; telem_poll auto-stops at the deadline. Caller
+ * (console) gates to pad + disarmed. */
+int telem_cw(uint32_t secs)
+{
+    if (secs == 0) {
+        if (s_cw_until_ms) { radio_cw(false); s_cw_until_ms = 0; datalog_event("CW OFF"); }
+        return 0;
+    }
+    if (radio_cw(true) != 0) return -1;
+    s_tx_pending = false;               /* abandon any in-flight normal TX */
+    s_rx_open    = false;
+    s_cw_until_ms = HAL_GetTick() + secs * 1000u;
+    if (s_cw_until_ms == 0) s_cw_until_ms = 1;   /* 0 is the "off" sentinel */
+    datalog_event("CW ON");
+    return 0;
+}
+
+/* Force one telemetry frame out ASAP (manual "packets out" trigger).
+ * 0 = sent, -1 = busy (CW up / TX already pending) or radio down. */
+int telem_send_now(void)
+{
+    if (s_cw_until_ms || s_tx_pending) return -1;
+    return send_packet_type(PKT_TELEMETRY, (uint8_t)g_fsm.state);
 }
 
 static bool on_pad(void)
@@ -98,7 +164,16 @@ void telem_build(telem_packet_t *p)
                               (g_fsm.armed         ? FLAG_ARMED     : 0) |
                               (g_fsm.sd_ok         ? FLAG_SD_OK     : 0) |
                               (g_fsm.chg_ok        ? FLAG_CHG_OK    : 0) |
-                              (g_fsm.gps_ok        ? FLAG_GPS_OK    : 0));
+                              (g_fsm.gps_ok        ? FLAG_GPS_OK    : 0) |
+                              (g_fsm.chg.vbat_mv < ARM_MIN_VBAT_MV ? FLAG_LOW_BATT : 0) |
+                              (pyro_deploy_failed() ? FLAG_DEPLOY_FAIL : 0));
+    { float tc;
+      p->mcu_temp_c10 = (mcu_temp_read(&tc) == 0) ? clamp_i16(tc * 10.0f)
+                                                  : (int16_t)MCU_TEMP_NODATA; }
+    p->seq            = s_seq++;                 /* v3: per-frame, wraps at 65535 */
+    p->last_evt_state = s_last_evt_state;
+    p->last_evt_count = s_evt_count;
+    p->main_alt_m     = (uint16_t)(g_fsm.main_alt_m + 0.5f);
     p->crc16 = crc16_ccitt((const uint8_t *)p, sizeof *p - 2);
 }
 
@@ -114,12 +189,21 @@ static int send_packet_type(uint8_t type, uint8_t state_field)
     if (rc == 0) {
         s_tx_pending = true;
         s_last_tx_ms = HAL_GetTick();
+        s_tx_count++;
+        if (s_monitor)
+            console_printf("[tx] %s len=%u #%lu\r\n",
+                           pkt_name(type), (unsigned)sizeof p,
+                           (unsigned long)s_tx_count);
     }
     return rc;
 }
 
 void telem_event(uint8_t event_state)
 {
+    /* v3: latch for the telemetry echo so a lost PKT_EVENT still surfaces the
+     * deploy/state on the next cadence frame. */
+    s_last_evt_state = event_state;
+    s_evt_count++;
     /* Always into the on-board log (works with no radio/GS in range)... */
     datalog_event(fsm_state_name((flight_state_t)event_state));
     /* ...and queue the PKT_EVENT downlink (drop-oldest when full). The
@@ -131,13 +215,22 @@ void telem_event(uint8_t event_state)
     s_evq_head++;
 }
 
+/* Anti-replay: reject an exact repeat of any of the last NONCE_HIST distinct
+ * commands. Deliberately NOT a monotonic "reject <= max" floor — the GS seeds
+ * its nonce from a RANDOM 32-bit value on every restart (gs.ino send_cmd), so
+ * a post-restart nonce can legitimately be lower than the last one seen; a
+ * floor would permanently lock out a restarted GS. Only filled ring slots are
+ * compared, so an incoming nonce of 0 is no longer falsely matched by an
+ * empty (zero-initialised) slot. */
 static bool nonce_fresh(uint32_t n)
 {
-    for (int i = 0; i < NONCE_HIST; i++)
+    for (uint8_t i = 0; i < s_nonce_cnt; i++)
         if (s_nonce[i] == n)
             return false;
     s_nonce[s_nonce_idx] = n;
     s_nonce_idx = (uint8_t)((s_nonce_idx + 1) % NONCE_HIST);
+    if (s_nonce_cnt < NONCE_HIST)
+        s_nonce_cnt++;
     return true;
 }
 
@@ -188,13 +281,21 @@ static void handle_command(const uint8_t *buf, int len)
             ack = false;
         } else {
             g_fsm.main_alt_m = m;
-            if (param_save(c.arg) != 0)
+            params_t pp;
+            fsm_params_snapshot(&pp);
+            if (param_save(&pp) != 0)
                 ack = false;                 /* applied to RAM, not persisted */
         }
         break;
     }
     case CMD_ZERO_BARO:
         if (on_pad()) baro_zero(); else ack = false;
+        break;
+    case CMD_SET_TX_POWER:
+        /* arg = signed dBm; radio_set_tx_power clamps to -9..22. Commands
+         * are only received in a pad RX window, so this is inherently
+         * pad-only (never in flight, where the FC is strictly TX-only). */
+        ack = (radio_set_tx_power((int)(int32_t)c.arg) == 0);
         break;
     case CMD_REBOOT:
         send_packet_type(PKT_ACK, (uint8_t)g_fsm.state);
@@ -248,6 +349,18 @@ void telem_poll(uint32_t now_ms)
             return;
     }
 
+    /* Bench CW carrier up: suspend all normal traffic until its deadline
+     * (signed diff = wrap-safe). Nothing else touches the radio meanwhile. */
+    if (s_cw_until_ms) {
+        if ((int32_t)(now_ms - s_cw_until_ms) >= 0) {
+            radio_cw(false);
+            s_cw_until_ms = 0;
+            datalog_event("CW AUTO-OFF");
+        } else {
+            return;
+        }
+    }
+
     /* TX watchdog: a lost TxDone must not wedge the link forever. */
     if (s_tx_pending && (now_ms - s_last_tx_ms) >= TELEM_TX_TIMEOUT_MS) {
         s_tx_pending = false;              /* next send re-enters STANDBY */
@@ -270,6 +383,13 @@ void telem_poll(uint32_t now_ms)
         int n = radio_rx_get(buf, sizeof buf);
         if (n > 0) {
             s_rx_open = false;
+            s_rx_count++;
+            if (s_monitor) {
+                int rssi = 0, snr = 0;
+                radio_last_rx_status(&rssi, &snr);
+                console_printf("[rx] len=%d rssi=%d snr=%d #%lu\r\n",
+                               n, rssi, snr, (unsigned long)s_rx_count);
+            }
             handle_command(buf, n);
         }
     }

@@ -52,6 +52,7 @@ CMD_SET_MAIN_ALT = td.CMD_SET_MAIN_ALT
 CMD_ZERO_BARO = td.CMD_ZERO_BARO
 CMD_REBOOT = td.CMD_REBOOT
 CMD_ENTER_BOOTLOADER = td.CMD_ENTER_BOOTLOADER
+CMD_SET_TX_POWER = td.CMD_SET_TX_POWER
 CMD_NAMES = td.CMD_NAMES
 
 STATE_NAMES = td.STATE_NAMES
@@ -83,13 +84,17 @@ HOST_KEYS = ("t_host", "src", "rssi", "snr")
 # Derived link statistics (GS/replay paths).
 LINK_KEYS = ("pkt_rate",)
 
-# FC-console-only extras (nullable everywhere else).
+# FC-console-only extras (nullable everywhere else). Note: mcu_temp_c and
+# main_alt_m are NOT here — both are telemetry fields now (TELEM_KEYS),
+# downlinked over radio (the console path still fills them too).
 CONSOLE_KEYS = (
     "press_pa", "temp_c",           # sensors: raw baro
     "pyro_sense_mv",                # status: pyro sense line
-    "main_alt_m", "testen",         # status: armed line
+    "testen",                       # status: armed line
     "log_running", "log_drops", "log_ring_hw", "log_ring_cap",
     "radio_reinit", "radio_txto", "radio_irq", "radio_tcxo",
+    "tx_power_dbm", "tx_count", "rx_count",  # `tx` dashboard
+    "rx_rssi", "rx_snr",            # `tx`: last-RX link quality
     "reset_cause",                  # boot banner
     "gps_last_fix_ms",              # gps command
     "imu_ok", "baro_ok", "radio_ok",  # health line (sd/chg/gps_ok are
@@ -100,8 +105,11 @@ CONSOLE_KEYS = (
 ALL_KEYS = TELEM_KEYS + HOST_KEYS + LINK_KEYS + CONSOLE_KEYS
 
 # Chart buffers every Source maintains (rows are [t_host, v, ...]).
+# "position" rows are [t, lat_deg, lon_deg, alt_baro_m] — raw lat/lon (the
+# ground-track chart + flight report project to local east/north themselves,
+# and the raw fix is what gets recorded).
 SERIES = ("alt", "vel", "accel", "gyro", "batt", "rssi", "snr", "rate",
-          "pyro")
+          "pyro", "position")
 
 # ---- events ----
 EVENT_KINDS = ("state", "pyro", "cmd_sent", "ack", "nak", "refusal",
@@ -151,4 +159,7 @@ def normalize_telem(d, t_host, src):
         rows["rssi"] = [t, latest["rssi"]]
     if latest["snr"] is not None:
         rows["snr"] = [t, latest["snr"]]
+    if d.get("gps_fix") and d.get("lat_deg") is not None \
+            and d.get("lon_deg") is not None:
+        rows["position"] = [t, d["lat_deg"], d["lon_deg"], d.get("alt_baro_m")]
     return latest, rows

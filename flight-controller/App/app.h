@@ -57,6 +57,10 @@ bool radio_tx_done(void);                                /* since last send */
 int  radio_rx_start(uint32_t timeout_ms);                /* single RX window */
 int  radio_rx_get(uint8_t *buf, uint8_t maxlen);         /* >0 = packet length received */
 void radio_irq(void);                                    /* EXTI15_10 -> DIO1 handler */
+int  radio_set_tx_power(int dbm);                        /* -9..22; next TX/CW */
+int  radio_get_tx_power(void);
+int  radio_cw(bool on);                                  /* bench continuous carrier */
+int  radio_last_rx_status(int *rssi_dbm, int *snr_db);   /* last RxDone; <0 = none yet */
 
 /* ---------------- gps.c — external module on USART6 ---------------- */
 typedef struct { int32_t lat_e7, lon_e7, alt_msl_cm;
@@ -72,9 +76,15 @@ int  pyro_init(void);                     /* ADC for continuity */
 bool pyro_continuity(uint8_t ch);         /* cached from CONT_HZ poll; NEVER pulses gate */
 void pyro_poll(void);                     /* continuity ADC poll + fire-pulse timing */
 int  pyro_fire(uint8_t ch);               /* state machine ONLY; ignores if !armed */
+int  pyro_fire_backup(uint8_t ch);        /* fault-independent backup; bypasses armed gate */
 uint8_t pyro_cont_bits(void);
 uint8_t pyro_fired_bits(void);
+bool    pyro_deploy_failed(void);         /* continuity survived fire + retry */
 uint16_t pyro_sense_mv(uint8_t ch);       /* raw divider reading, battery-side mV */
+int  mcu_temp_read(float *temp_c);        /* STM32 internal die temp (borrows ADC1) */
+
+/* ---------------- lowpower.c ---------------- */
+int  lowpower_sleep(uint32_t seconds);    /* STOP-mode sleep; 0 = until RESET. Resets on wake */
 
 /* ---------------- servo.c ---------------- */
 int  servo_init(void);                    /* TIM2 CH1..4, 50 Hz, centered 1500 us */
@@ -100,6 +110,7 @@ typedef struct {
     bool     armed, test_enabled;
     float    agl_m, vel_ms;          /* filtered */
     float    main_alt_m;             /* runtime-settable */
+    uint32_t apogee_timeout_ms;      /* runtime-settable apogee backup timer (per-motor) */
     uint32_t t_launch_ms;
     imu_sample_t imu;
     gps_fix_t    gps;
@@ -121,6 +132,12 @@ void telem_poll(uint32_t now_ms);         /* cadence TX, pad RX windows, command
 void telem_build(telem_packet_t *p);      /* fill from g_fsm + CRC */
 void telem_event(uint8_t event_state);    /* PKT_EVENT on transitions/pyro */
 void telem_debug(uint32_t *tx_timeouts, uint32_t *reinit_attempts);
+void telem_stats(uint32_t *tx, uint32_t *rx);  /* accepted TX / RX frame counts */
+void telem_monitor(bool on);              /* live per-packet console print */
+bool telem_monitor_active(void);
+int  telem_cw(uint32_t secs);             /* bench carrier, 0 = stop; auto-off */
+bool telem_cw_active(void);
+int  telem_send_now(void);                /* force one frame; 0 = sent, -1 = busy/down */
 
 /* ---------------- datalog.c — SD binary logging ---------------- */
 /* 68-byte fixed records -> LOGnnn.BIN via FatFs; ring buffer decouples the
@@ -154,11 +171,21 @@ void datalog_event(const char *msg);      /* human-readable event -> LOGnnn.TXT 
 
 /* ---------------- param_store.c — flash param persistence ------------ */
 /* Append-record store in flash sector 7 (0x08060000; linker caps code at
- * 384K so overlap is impossible). Persists ONLY main_alt_m. NEVER persist
- * test_enabled (must boot off, CLAUDE.md §2), gyro bias or baro zero
- * (both re-done each pad session by design). */
-int  param_load(uint32_t *main_alt_cm);   /* 0 = newest valid record found */
-int  param_save(uint32_t main_alt_cm);    /* ground states only; 0 = saved */
+ * 384K so overlap is impossible). Persists the tunables below + last GPS for
+ * recovery. NEVER persist test_enabled (must boot off, CLAUDE.md §2), gyro
+ * bias or baro zero (both re-done each pad session by design). */
+typedef struct {
+    uint32_t main_alt_cm;         /* main-deploy AGL, cm */
+    uint32_t apogee_timeout_ms;   /* per-motor apogee backup timer */
+    int32_t  last_lat_e7;         /* last GPS at landing (recovery); 0 = none */
+    int32_t  last_lon_e7;
+} params_t;
+int  param_load(params_t *p);             /* 0 = newest valid record found */
+int  param_save(const params_t *p);       /* ground states only; 0 = saved */
+
+/* g_fsm <-> params_t glue (state_machine.c owns g_fsm). */
+void fsm_params_snapshot(params_t *p);    /* current tunables + last GPS */
+void fsm_params_apply(const params_t *p); /* sanity-clamped apply to g_fsm */
 
 /* ---------------- console.c — USB-CDC command console ---------------- */
 void console_init(void);

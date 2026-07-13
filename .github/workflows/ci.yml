@@ -1,0 +1,48 @@
+# CI: host unit tests + firmware cross-build.
+# Runs on every push and pull request.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Host-side Python tests (stdlib unittest; no pytest).
+  # pyserial is required because tests/test_console_contract.py imports
+  # tools/live_dashboard.py, which hard-imports `serial` at module load.
+  # ---------------------------------------------------------------------------
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install pyserial (transitive hard-import in one test)
+        run: python -m pip install pyserial
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  # ---------------------------------------------------------------------------
+  # Firmware build (STM32F722, arm-none-eabi-gcc + make).
+  # apt puts arm-none-eabi-gcc on PATH at /usr/bin, so we leave GCC_PATH unset:
+  # the committed Makefile falls back to `$(PREFIX)gcc` (= arm-none-eabi-gcc
+  # from PATH) when GCC_PATH is not defined. Outputs build/fc.bin.
+  # ---------------------------------------------------------------------------
+  firmware-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARM toolchain + make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi make
+      - name: Build firmware
+        working-directory: flight-controller
+        run: make -j
+      - name: Upload firmware binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fc.bin
+          path: flight-controller/build/fc.bin

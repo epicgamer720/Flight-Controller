@@ -23,6 +23,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -82,7 +83,11 @@ def main():
 
     srv = make_server(deck, UI_DIR, port=args.http)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    url = "http://127.0.0.1:%d/" % args.http
+    # cache-bust the top-level nav URL, not just the sub-assets: WebView2's
+    # persistent disk cache serves a stale index.html across relaunches
+    # (ignores no-store), which pins the OLD ?v= stamps on the JS/CSS. A
+    # fresh query per launch forces a new document fetch every relaunch.
+    url = "http://127.0.0.1:%d/?v=%d" % (args.http, int(time.time()))
     print("Flight Deck: %s  (source=%s%s)"
           % (url, args.source, " " + port if port else ""))
     if deck.recorder.session:

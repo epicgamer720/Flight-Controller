@@ -44,9 +44,18 @@ STATUS_REPLY = (
     "armed:   0  testen: 1  main_alt: 150.00 m\r\n"
     "alt:     1.23 m AGL  vel: -0.04 m/s\r\n"
     "batt:    7912 mV\r\n"
+    "mcu:     23.90 C (die)\r\n"
     "flags:   gps_fix=1 accel_sat=0\r\n"
     "health:  imu=1 baro=1 sd=1 radio=1 chg=1 gps=1\r\n"
     "pyro:    cont=0x01 fired=0x00 sense=734 mV\r\n"
+)
+
+TX_REPLY = (
+    "radio:   ok  tcxo:yes  power:22 dBm\r\n"
+    "packets: tx=123  rx=4\r\n"
+    "errors:  tx_timeouts=0  reinit=0\r\n"
+    "last rx: rssi=-72 dBm  snr=9 dB\r\n"
+    "monitor: off   cw: off\r\n"
 )
 
 SENSORS_REPLY = (
@@ -126,6 +135,28 @@ class TestFcConsoleRegexes(unittest.TestCase):
         m = sources.RE_PYRO.search(STATUS_REPLY)
         self.assertIsNotNone(m)
         self.assertEqual(m.groups(), ("01", "00", "734"))
+
+    def test_re_mcu(self):
+        m = sources.RE_MCU.search(STATUS_REPLY)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), "23.90")
+
+    def test_re_tx_power(self):
+        m = sources.RE_TX_POWER.search(TX_REPLY)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), "22")
+
+    def test_re_tx_pkts(self):
+        m = sources.RE_TX_PKTS.search(TX_REPLY)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.groups(), ("123", "4"))
+
+    def test_re_tx_rxq(self):
+        m = sources.RE_TX_RXQ.search(TX_REPLY)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.groups(), ("-72", "9"))
+        # "last rx: (none)" must NOT match
+        self.assertIsNone(sources.RE_TX_RXQ.search("last rx: (none)\r\n"))
 
     def test_re_imu(self):
         m = sources.RE_IMU.search(SENSORS_REPLY)
@@ -208,6 +239,7 @@ class TestFcConsoleRegexes(unittest.TestCase):
                               (b"baro:", SENSORS_REPLY),
                               (b"last_fix", GPS_REPLY),
                               (b"DIO1", RADIO_REPLY),
+                              (b"cw:", TX_REPLY),
                               (b"fault=", CHARGE_REPLY),
                               (b"bytes", LOG_REPLY)):
             self.assertIn(marker.decode(), reply)
@@ -223,6 +255,7 @@ class TestConsoleSourceAnchors(unittest.TestCase):
         "armed:   %d  testen: %d  main_alt: %s m",
         "alt:     %s m AGL  vel: %s m/s",
         "batt:    %u mV",
+        "mcu:     %s C (die)",
         "flags:   gps_fix=%d accel_sat=%d",
         "health:  imu=%d baro=%d sd=%d radio=%d chg=%d gps=%d",
         "cont=0x%02X fired=0x%02X sense=%u mV",
@@ -231,6 +264,9 @@ class TestConsoleSourceAnchors(unittest.TestCase):
         "fix=%d sats=%u",
         "last_fix=%lu ms ago",
         "radio: %s  tcxo: %s",
+        "radio:   %s  tcxo:%s  power:%d dBm",
+        "packets: tx=%lu  rx=%lu",
+        "last rx: rssi=%d dBm  snr=%d dB",
         "reinit attempts: %lu  tx timeouts: %lu",
         "chip irq status: 0x%02X%02X",
         "BUSY pin: %d  DIO1 pin: %d",
@@ -248,7 +284,8 @@ class TestConsoleSourceAnchors(unittest.TestCase):
         self.assertIn('reset:%s', APP_MAIN_SRC)
 
     def test_poll_commands_in_console_cmd_table(self):
-        for cmd in ("status", "sensors", "gps", "radio", "charge", "log"):
+        for cmd in ("status", "sensors", "gps", "radio", "tx", "charge",
+                    "log"):
             self.assertIn('"%s"' % cmd, CONSOLE_SRC,
                           "console.c no longer has a %r command" % cmd)
 
@@ -274,6 +311,8 @@ class TestGsInoContract(unittest.TestCase):
         '\\"accel_g_x100\\":[%d,%d,%d]',
         '\\"gyro_dps_x10\\":[%d,%d,%d]',
         '\\"batt_v\\":%.3f',
+        '\\"mcu_temp_c10\\":%d',
+        '\\"mcu_temp_c\\":%s',
         '\\"rssi\\":%.1f,\\"snr\\":%.2f}',
         '{\\"uplink\\":\\"%s\\"',
         '\\"tx_status\\":%d',
@@ -291,9 +330,15 @@ class TestGsInoContract(unittest.TestCase):
                           "gs.ino lost deck JSON anchor %r" % anchor)
 
     def test_gs_sends_ack_as_telemetry_shaped_frame(self):
-        # ACK semantics doc: the FC's PKT_ACK arrives as a 46-byte
+        # ACK semantics doc: the FC's PKT_ACK arrives as a 48-byte
         # telemetry-shaped frame, dispatched through emit_telem.
         self.assertIn("PKT_ACK", GS_SRC)
+
+    def test_gs_stdin_has_power_command(self):
+        # over-air TX power: deck's GS adapter sends "power <dbm>" ->
+        # CMD_SET_TX_POWER uplink; gs.ino must parse it.
+        self.assertIn("CMD_SET_TX_POWER", GS_SRC)
+        self.assertIn("usage: power", GS_SRC)
 
     def test_gs_json_line_key_order_matches_parse_telem(self):
         # gs.ino emit_telem mirrors parse_telem() key order with

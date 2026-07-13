@@ -173,6 +173,54 @@ class TestConsoleAdapter(unittest.TestCase):
         self.assertFalse(adapter.send("servo", {"ch": 5, "us": 1500}).ok)
         self.assertFalse(adapter.send("servo", {"ch": 1, "us": 300}).ok)
 
+    def test_power_ok(self):
+        src = FakeConsoleSource(replies={"tx power": "tx power = 17 dBm\r\n"})
+        res = ConsoleCommandAdapter(src).send("power", {"dbm": 17})
+        self.assertTrue(res.ok)
+        self.assertEqual(src.executed, ["tx power 17"])
+
+    def test_power_bounds_enforced_locally(self):
+        adapter = ConsoleCommandAdapter(FakeConsoleSource())
+        for bad in (-10, 23, "x"):
+            self.assertFalse(adapter.send("power", {"dbm": bad}).ok, bad)
+        self.assertEqual(adapter.src.executed, [])
+
+    def test_power_over_gs(self):
+        adapter, src = gs_adapter(script=[[echo(name="SET_TX_POWER"), ack()]])
+        res = adapter.send("power", {"dbm": 17})
+        self.assertTrue(res.ok)
+        self.assertEqual(src.sent, ["power 17"])    # GS stdin grammar
+
+    def test_sleep_ok_and_line(self):
+        src = FakeConsoleSource(replies={
+            "sleep": "sleeping (STOP) ~30 s — USB drops; wakes on timer or RESET\r\n"})
+        res = ConsoleCommandAdapter(src).send("sleep", {"secs": 30})
+        self.assertTrue(res.ok)
+        self.assertEqual(src.executed, ["sleep 30"])
+
+    def test_sleep_default_is_until_reset(self):
+        src = FakeConsoleSource(replies={"sleep": "sleeping (STOP) — press RESET\r\n"})
+        res = ConsoleCommandAdapter(src).send("sleep", {})
+        self.assertTrue(res.ok)
+        self.assertEqual(src.executed, ["sleep 0"])       # 0 = until RESET
+
+    def test_sleep_bounds_and_port_drop_ok(self):
+        adapter = ConsoleCommandAdapter(FakeConsoleSource())
+        self.assertFalse(adapter.send("sleep", {"secs": 40000}).ok)
+        self.assertEqual(adapter.src.executed, [])
+        # port drops before any reply -> drops_port makes it a success
+        src = FakeConsoleSource()
+        src.execute = lambda line, timeout=5.0: None
+        res = ConsoleCommandAdapter(src).send("sleep", {"secs": 10})
+        self.assertTrue(res.ok)
+        self.assertIn("port dropped", res.detail)
+
+    def test_sleep_is_console_only(self):
+        adapter, src = gs_adapter()
+        res = adapter.send("sleep", {"secs": 10})
+        self.assertFalse(res.ok)
+        self.assertIn("console-only", res.refusal)
+
     def test_drops_port_commands_tolerate_lost_reply(self):
         src = FakeConsoleSource(latest=dict(PAD_LATEST),
                                 replies={})
@@ -286,7 +334,7 @@ class TestCapabilities(unittest.TestCase):
     def test_gs_set_matches_gs_stdin_grammar(self):
         gs_cmds = {n for n, c in CAPABILITIES.items() if c.gs}
         self.assertEqual(gs_cmds, {"arm", "disarm", "zero", "mainalt",
-                                   "fire", "reboot", "nop"})
+                                   "fire", "reboot", "nop", "power"})
 
     def test_danger_commands_require_confirm(self):
         for name in ("arm", "fire"):

@@ -33,6 +33,8 @@
 #define OP_GET_DEVICE_ERRORS    0x17
 #define OP_CLEAR_DEVICE_ERRORS  0x07
 #define OP_GET_STATUS           0xC0
+#define OP_GET_PKT_STATUS       0x14
+#define OP_SET_TX_CONT_WAVE     0xD1
 
 /* ---- IRQ bits ---- */
 #define IRQ_TX_DONE             0x0001u
@@ -63,6 +65,9 @@ static volatile uint8_t s_rx_len     = 0;
 static volatile uint8_t s_rx_buf[256];
 static uint8_t          s_zeros[256];          /* TX filler for reads */
 static uint8_t          s_junk[256];           /* RX sink for writes */
+static int8_t           s_tx_dbm     = LORA_TX_DBM;  /* current SetTxParams power */
+static int              s_last_rssi, s_last_snr;     /* GetPacketStatus of last RxDone */
+static bool             s_have_rx_status;
 
 /* ---------------------------------------------------------- */
 static int busy_wait(void)
@@ -172,6 +177,14 @@ static void radio_service(void)
                 }
                 s_rx_len   = len;   /* set len before ready flag */
                 s_rx_ready = true;
+                /* Link quality of this packet (LoRa): RssiPkt = -val/2 dBm,
+                 * SnrPkt = signed/4 dB. Latched for `tx` / the monitor. */
+                uint8_t pt[5] = { OP_GET_PKT_STATUS, 0, 0, 0, 0 }, pr[5] = {0};
+                if (sx_cmd(pt, pr, 5) == 0) {
+                    s_last_rssi = -(int)pr[2] / 2;
+                    s_last_snr  = (int)((int8_t)pr[3]) / 4;
+                    s_have_rx_status = true;
+                }
             }
         }
         /* IRQ_TIMEOUT: chip is back in STDBY_RC; nothing latched. */
@@ -304,6 +317,7 @@ int radio_init(void)
 {
     s_tx_done = false; s_rx_ready = false; s_irq_pend = false; s_rx_len = 0;
     s_err_tcxo = s_err_xtal = 0;
+    s_tx_dbm = LORA_TX_DBM;          /* configure() re-issues SetTxParams at this */
 
     s_using_tcxo = true;
     s_err_tcxo = radio_configure(true);
@@ -390,6 +404,54 @@ int radio_rx_get(uint8_t *buf, uint8_t maxlen)
         buf[i] = s_rx_buf[i];
     s_rx_ready = false;              /* latched packet returned once */
     return (int)n;
+}
+
+/* Set TX power live (-9..+22 dBm for the SX1262 hi-power PA). We keep the
+ * +22 PA config from init and vary only the SetTxParams power byte across the
+ * whole range — the standard SX1262 approach (RadioLib does the same). Takes
+ * effect on the next TX (and on `radio_cw`). */
+int radio_set_tx_power(int dbm)
+{
+    if (!s_ok) return -1;
+    if (dbm < -9) dbm = -9;
+    if (dbm > 22) dbm = 22;
+    service_pending();
+    uint8_t rx[3];
+    uint8_t tx[3] = { OP_SET_TX_PARAMS, (uint8_t)(int8_t)dbm, 0x04 }; /* 200 us ramp */
+    if (sx_cmd(tx, rx, 3) < 0) return -2;
+    s_tx_dbm = (int8_t)dbm;
+    return 0;
+}
+
+int radio_get_tx_power(void) { return s_tx_dbm; }
+
+/* Unmodulated continuous carrier at the current freq/power until the next
+ * SetStandby. Bench only — for supply-current / full-power verification.
+ * DIO2 drives the RF switch to TX automatically. Caller gates to pad+disarmed. */
+int radio_cw(bool on)
+{
+    if (!s_ok) return -1;
+    service_pending();
+    uint8_t rx[2];
+    { uint8_t st[2] = { OP_SET_STANDBY, 0x00 };
+      if (sx_cmd(st, rx, 2) < 0) return -2; }
+    if (on) {
+        uint8_t cw[1] = { OP_SET_TX_CONT_WAVE };
+        if (sx_cmd(cw, rx, 1) < 0) return -3;
+    } else {
+        s_tx_done = false;
+        (void)sx_clear_irq(IRQ_ALL);
+    }
+    return 0;
+}
+
+/* RSSI/SNR (dBm/dB) of the most recent good RX. <0 until one arrives. */
+int radio_last_rx_status(int *rssi_dbm, int *snr_db)
+{
+    if (!s_have_rx_status) return -1;
+    if (rssi_dbm) *rssi_dbm = s_last_rssi;
+    if (snr_db)   *snr_db   = s_last_snr;
+    return 0;
 }
 
 /* EXTI15_10 -> DIO1. Uses SPI from the ISR: acceptable only because the

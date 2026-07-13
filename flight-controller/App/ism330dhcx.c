@@ -9,6 +9,7 @@
  * ============================================================ */
 #include "app.h"
 #include <math.h>
+#include <string.h>
 
 /* ---- Register map (DS: ISM330DHCX) ---- */
 #define REG_WHO_AM_I    0x0F
@@ -36,6 +37,11 @@ static bool     s_cal_active;
 static bool     s_cal_done;
 static uint32_t s_cal_n;
 static float    s_cal_sum[3];
+static float    s_cal_min[3], s_cal_max[3];  /* per-axis extent during cal */
+static bool     s_cal_moved;         /* accel strayed from 1 g during cal    */
+static uint8_t  s_prev_raw[12];      /* last burst, for freeze detection     */
+static uint8_t  s_same_cnt;          /* consecutive byte-identical bursts    */
+static bool     s_have_prev;
 
 static int reg_write(uint8_t reg, uint8_t val)
 {
@@ -83,6 +89,18 @@ int imu_init(void)
     return 0;
 }
 
+static void cal_reset_accum(void)
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        s_cal_sum[i] =  0.0f;
+        s_cal_min[i] =  1.0e9f;
+        s_cal_max[i] = -1.0e9f;
+    }
+    s_cal_n     = 0;
+    s_cal_moved = false;
+}
+
 int imu_read(imu_sample_t *s)
 {
     uint8_t raw[12];
@@ -113,6 +131,23 @@ int imu_read(imu_sample_t *s)
             return -3;
         }
     }
+
+    /* Freeze detect: a stuck bus/sensor can return HAL_OK with a fixed
+     * non-rail value. BDU is on and live gyro noise never repeats, so N
+     * byte-identical bursts in a row is a fault — fail the read (feeds the
+     * s_imu_fail -> FAULT path) and keep the previous outputs. */
+    if (s_have_prev && memcmp(raw, s_prev_raw, sizeof raw) == 0) {
+        if (s_same_cnt < 0xFFu) s_same_cnt++;
+        if (s_same_cnt >= IMU_FREEZE_N) {
+            s_read_ok = false;
+            return -4;
+        }
+    } else {
+        s_same_cnt = 0;
+    }
+    memcpy(s_prev_raw, raw, sizeof raw);
+    s_have_prev = true;
+
     s_read_ok = true;
 
     for (i = 0; i < 6; i++)
@@ -124,13 +159,32 @@ int imu_read(imu_sample_t *s)
     }
 
     if (s_cal_active) {                              /* stationary pad cal */
-        for (i = 0; i < 3; i++)
+        /* Reject a cal taken while the vehicle is handled/moving: track per-
+         * axis gyro peak-to-peak and accel-magnitude stray; if either is out
+         * of band at the end of the window, discard and restart rather than
+         * latching a bad bias. Arm precondition (-3) never clears until a
+         * genuinely stationary cal completes. */
+        float amag = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        if (fabsf(amag - 1.0f) > GYRO_CAL_ACC_BAND_G)
+            s_cal_moved = true;
+        for (i = 0; i < 3; i++) {
             s_cal_sum[i] += g[i];
+            if (g[i] < s_cal_min[i]) s_cal_min[i] = g[i];
+            if (g[i] > s_cal_max[i]) s_cal_max[i] = g[i];
+        }
         if (++s_cal_n >= GYRO_CAL_SAMPLES) {
+            bool steady = !s_cal_moved;
             for (i = 0; i < 3; i++)
-                s_gbias[i] = s_cal_sum[i] / (float)s_cal_n;
-            s_cal_active = false;
-            s_cal_done   = true;
+                if ((s_cal_max[i] - s_cal_min[i]) > GYRO_CAL_MAX_PP_DPS)
+                    steady = false;
+            if (steady) {
+                for (i = 0; i < 3; i++)
+                    s_gbias[i] = s_cal_sum[i] / (float)s_cal_n;
+                s_cal_active = false;
+                s_cal_done   = true;
+            } else {
+                cal_reset_accum();               /* moved: try again */
+            }
         }
     }
 
@@ -149,8 +203,7 @@ int imu_read(imu_sample_t *s)
 
 void imu_gyro_cal_start(void)
 {
-    s_cal_sum[0] = s_cal_sum[1] = s_cal_sum[2] = 0.0f;
-    s_cal_n      = 0;
+    cal_reset_accum();
     s_cal_done   = false;
     s_cal_active = true;    /* accumulation happens inside imu_read() */
 }

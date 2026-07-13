@@ -165,28 +165,69 @@ void console_rx(const uint8_t *buf, uint32_t len)
 static void cmd_help(int argc, char **argv)
 {
   (void)argc; (void)argv;
+  /* Split across several console_printf calls: one big string overflows the
+   * 256-byte vsnprintf buffer and the later commands never print. */
   console_printf(
     "commands:\r\n"
     "  help                    this text\r\n"
     "  status                  state/armed/alt/vel/batt/flags/health\r\n"
+    "  preflight               GO/NO-GO checklist before arming\r\n"
     "  sensors                 raw IMU + baro\r\n"
     "  gps                     last GPS fix\r\n"
-    "  servo <1-4> <500-2500>  set servo pulse (us)\r\n"
+    "  servo <1-4> <500-2500>  set servo pulse (us)\r\n");
+  console_printf(
     "  arm | disarm            arming gate / disarm\r\n"
     "  testen <on|off>         pad test mode (GROUND_IDLE only)\r\n"
     "  fire <ch> <hex-code>    pad test fire (testen + passcode)\r\n"
     "  zero                    zero baro AGL\r\n"
     "  mainalt <m>             set main deploy altitude\r\n"
+    "  apogee <ms>             set apogee/backup deploy timer (per-motor)\r\n"
     "  log <stat|start|stop>   SD logging\r\n"
-    "  cal                     start pad gyro bias cal\r\n"
+    "  cal                     start pad gyro bias cal\r\n");
+  console_printf(
     "  radio                   radio health\r\n"
     "  radiodbg                raw SX1262 hardware probe\r\n"
+    "  tx [power|mon|cw|frame] transmit dashboard / control\r\n"
     "  i2cscan                 scan I2C bus for devices\r\n"
     "  charge                  charger status\r\n"
     "  bootloader              reboot into USB DFU\r\n"
     "  reboot                  reset MCU\r\n"
     "  wdtest                  hang on purpose (IWDG must reset us)\r\n"
+    "  sleep [s]               STOP low-power; 0/none = until RESET\r\n"
     "  led <r> <g> <b>|auto    WS2812 bench test (needs 5 V rail)\r\n");
+}
+
+static void cmd_preflight(int argc, char **argv)
+{
+  int fail = 0, warn = 0;
+  (void)argc; (void)argv;
+  /* Aggregate existing health getters into a GO/NO-GO checklist. Pure
+   * read-out — no sensor is pulsed or re-read. Hard checks gate arming;
+   * WARN items (radio/sd/gps) still allow an SD-logged flight. */
+  #define CK(cond, name) do { \
+      console_printf("  [%s] %s\r\n", (cond) ? "PASS" : "FAIL", name); \
+      if (!(cond)) fail++; } while (0)
+  #define WK(cond, name) do { \
+      console_printf("  [%s] %s\r\n", (cond) ? "PASS" : "WARN", name); \
+      if (!(cond)) warn++; } while (0)
+
+  console_printf("preflight (%s):\r\n", fsm_state_name(g_fsm.state));
+  CK(g_fsm.imu_ok,                          "imu healthy");
+  CK(g_fsm.baro_ok,                         "baro healthy");
+  CK(imu_gyro_cal_done(),                   "gyro cal done");
+  CK(pyro_continuity(0),                    "pyro continuity");
+  CK(g_fsm.chg.vbat_mv >= ARM_MIN_VBAT_MV,  "battery ok");
+  CK(!pyro_deploy_failed(),                 "no prior deploy-fail");
+  CK(!g_fsm.test_enabled,                   "test mode OFF");
+  WK(g_fsm.radio_ok,                        "radio");
+  WK(datalog_ok(),                          "sd log");
+  WK(g_fsm.gps.fix,                         "gps fix");
+  console_printf("  batt=%u mV  cont=0x%02X  sats=%u\r\n",
+                 g_fsm.chg.vbat_mv, pyro_cont_bits(), g_fsm.gps.sats);
+  console_printf("==> %s%s\r\n", fail ? "NO-GO" : "GO",
+                 warn ? " (warnings)" : "");
+  #undef CK
+  #undef WK
 }
 
 static void cmd_status(int argc, char **argv)
@@ -199,13 +240,19 @@ static void cmd_status(int argc, char **argv)
   console_printf("alt:     %s m AGL  vel: %s m/s\r\n",
                  ff(g_fsm.agl_m), ff(g_fsm.vel_ms));
   console_printf("batt:    %u mV\r\n", g_fsm.chg.vbat_mv);
+  {
+    float tc;
+    if (mcu_temp_read(&tc) == 0)
+      console_printf("mcu:     %s C (die)\r\n", ff(tc));
+  }
   console_printf("flags:   gps_fix=%d accel_sat=%d\r\n",
                  g_fsm.gps.fix, g_fsm.imu.accel_sat);
   console_printf("health:  imu=%d baro=%d sd=%d radio=%d chg=%d gps=%d\r\n",
                  g_fsm.imu_ok, g_fsm.baro_ok, g_fsm.sd_ok, g_fsm.radio_ok,
                  g_fsm.chg_ok, g_fsm.gps_ok);
-  console_printf("pyro:    cont=0x%02X fired=0x%02X sense=%u mV\r\n",
-                 pyro_cont_bits(), pyro_fired_bits(), pyro_sense_mv(0));
+  console_printf("pyro:    cont=0x%02X fired=0x%02X sense=%u mV%s\r\n",
+                 pyro_cont_bits(), pyro_fired_bits(), pyro_sense_mv(0),
+                 pyro_deploy_failed() ? "  DEPLOY-FAIL" : "");
 }
 
 static void cmd_sensors(int argc, char **argv)
@@ -248,6 +295,14 @@ static void cmd_gps(int argc, char **argv)
                  (long)(f.alt_msl_cm / 100),  labs((long)(f.alt_msl_cm % 100)));
   console_printf("     last_fix=%lu ms ago\r\n",
                  (unsigned long)(f.fix ? (HAL_GetTick() - f.last_fix_ms) : 0U));
+  {
+    /* Persisted last-landing fix (recovery aid): survives power cycles. */
+    params_t pp;
+    if ((param_load(&pp) == 0) && (pp.last_lat_e7 != 0 || pp.last_lon_e7 != 0))
+      console_printf("     last landing: lat=%ld.%07ld lon=%ld.%07ld\r\n",
+                     (long)(pp.last_lat_e7 / 10000000), labs((long)(pp.last_lat_e7 % 10000000)),
+                     (long)(pp.last_lon_e7 / 10000000), labs((long)(pp.last_lon_e7 % 10000000)));
+  }
 }
 
 static void cmd_servo(int argc, char **argv)
@@ -279,7 +334,15 @@ static void cmd_arm(int argc, char **argv)
   }
   else
   {
-    console_printf("arm refused (%d): need healthy sensors + still on pad\r\n", r);
+    console_printf("arm refused (%d): %s\r\n", r,
+      r == -1 ? "not in GROUND_IDLE" :
+      r == -2 ? "imu/baro unhealthy" :
+      r == -3 ? "gyro cal not done (run 'cal', keep still)" :
+      r == -4 ? "not still (velocity)" :
+      r == -5 ? "accel implausible / saturated" :
+      r == -6 ? "no pyro continuity" :
+      r == -7 ? "battery too low" :
+      r == -8 ? "not vertical (orientation)" : "unknown");
   }
 }
 
@@ -393,7 +456,9 @@ static void cmd_mainalt(int argc, char **argv)
   console_printf("main_alt = %s m\r\n", ff(g_fsm.main_alt_m));
   {
     /* Persist (ground states only — param_save gates internally). */
-    int rc = param_save((uint32_t)((m * 100.0f) + 0.5f));
+    params_t pp;
+    fsm_params_snapshot(&pp);
+    int rc = param_save(&pp);
     if (rc == 0)
     {
       console_printf("saved to flash\r\n");
@@ -402,6 +467,33 @@ static void cmd_mainalt(int argc, char **argv)
     {
       console_printf("flash save FAILED (%d)\r\n", rc);
     }
+  }
+}
+
+static void cmd_apogee(int argc, char **argv)
+{
+  unsigned long ms;
+  if (argc < 2)
+  {
+    console_printf("apogee_timeout: %lu ms (per-motor backup deploy timer)\r\n",
+                   (unsigned long)g_fsm.apogee_timeout_ms);
+    return;
+  }
+  ms = strtoul(argv[1], NULL, 10);
+  /* floor = MAX_BURN_MS: the backup deploy uses this timer and fires regardless
+   * of state, so a value during boost would deploy under thrust. */
+  if ((ms < (unsigned long)MAX_BURN_MS) || (ms > 120000UL))
+  {
+    console_printf("err: %d..120000 ms (must be past burnout)\r\n", MAX_BURN_MS);
+    return;
+  }
+  g_fsm.apogee_timeout_ms = (uint32_t)ms;
+  console_printf("apogee_timeout = %lu ms\r\n", ms);
+  {
+    params_t pp;
+    fsm_params_snapshot(&pp);
+    int rc = param_save(&pp);
+    console_printf(rc == 0 ? "saved to flash\r\n" : "flash save FAILED (%d)\r\n", rc);
   }
 }
 
@@ -598,6 +690,129 @@ static void cmd_led(int argc, char **argv)
                  r, g, b);
 }
 
+static void cmd_tx(int argc, char **argv)
+{
+  if (argc >= 2 && strcmp(argv[1], "power") == 0)
+  {
+    if (argc < 3)
+    {
+      console_printf("tx power: %d dBm\r\n", radio_get_tx_power());
+      return;
+    }
+    long dbm = strtol(argv[2], NULL, 10);
+    if ((dbm < -9) || (dbm > 22))
+    {
+      console_printf("err: -9..22 dBm\r\n");
+      return;
+    }
+    if (radio_set_tx_power((int)dbm) == 0)
+      console_printf("tx power = %d dBm\r\n", radio_get_tx_power());
+    else
+      console_printf("err: radio not ready\r\n");
+    return;
+  }
+  if (argc >= 2 && strcmp(argv[1], "mon") == 0)
+  {
+    bool on = (argc >= 3) && (strcmp(argv[2], "on") == 0);
+    telem_monitor(on);
+    console_printf("tx monitor %s\r\n", on ? "on" : "off");
+    return;
+  }
+  if (argc >= 2 && strcmp(argv[1], "cw") == 0)
+  {
+    if (argc >= 3 && strcmp(argv[2], "off") == 0)
+    {
+      telem_cw(0);
+      console_printf("cw off\r\n");
+      return;
+    }
+    /* Real RF emission + heats the module over the IMU (gyro drift, §5.3):
+     * pad + disarmed only, and always auto-off. */
+    if (((g_fsm.state != ST_GROUND_IDLE) && (g_fsm.state != ST_INIT)) || g_fsm.armed)
+    {
+      console_printf("cw refused: GROUND_IDLE + disarmed only\r\n");
+      return;
+    }
+    unsigned long secs = (argc >= 3) ? strtoul(argv[2], NULL, 10) : 10UL;
+    if ((secs == 0UL) || (secs > 60UL))
+    {
+      console_printf("usage: tx cw <1-60 s> | tx cw off\r\n");
+      return;
+    }
+    if (telem_cw((uint32_t)secs) == 0)
+      console_printf("cw ON %lu s @ %d dBm — watch supply current ('tx cw off' to stop)\r\n",
+                     secs, radio_get_tx_power());
+    else
+      console_printf("err: radio not ready\r\n");
+    return;
+  }
+  if (argc >= 2 && strcmp(argv[1], "frame") == 0)
+  {
+    console_printf(telem_send_now() == 0 ? "frame sent\r\n"
+                                         : "busy (cw up, tx pending, or radio down)\r\n");
+    return;
+  }
+  if (argc >= 2)
+  {
+    console_printf("usage: tx [power <dbm>|mon <on|off>|cw <s>|cw off|frame]\r\n");
+    return;
+  }
+
+  /* bare 'tx' — transmit dashboard */
+  {
+    uint32_t txc, rxc, txto, reinit;
+    int rssi, snr;
+    telem_stats(&txc, &rxc);
+    telem_debug(&txto, &reinit);
+    console_printf("radio:   %s  tcxo:%s  power:%d dBm\r\n",
+                   radio_ok() ? "ok" : "FAIL",
+                   radio_using_tcxo() ? "yes" : "no", radio_get_tx_power());
+    console_printf("packets: tx=%lu  rx=%lu\r\n",
+                   (unsigned long)txc, (unsigned long)rxc);
+    console_printf("errors:  tx_timeouts=%lu  reinit=%lu\r\n",
+                   (unsigned long)txto, (unsigned long)reinit);
+    if (radio_last_rx_status(&rssi, &snr) == 0)
+      console_printf("last rx: rssi=%d dBm  snr=%d dB\r\n", rssi, snr);
+    else
+      console_printf("last rx: (none)\r\n");
+    console_printf("monitor: %s   cw: %s\r\n",
+                   telem_monitor_active() ? "on" : "off",
+                   telem_cw_active() ? "ON" : "off");
+  }
+}
+
+static void cmd_sleep(int argc, char **argv)
+{
+  /* STOP-mode low power. Ground + disarmed only: STOP retains the pyro gate
+   * driven LOW (boot-safe state); we force-disarm too. Wakes on the RTC
+   * timer or RESET (SW1) and comes back via a clean reboot. */
+  if (((g_fsm.state != ST_INIT) && (g_fsm.state != ST_GROUND_IDLE)) ||
+      g_fsm.armed)
+  {
+    console_printf("sleep refused: GROUND_IDLE + disarmed only\r\n");
+    return;
+  }
+  unsigned long secs = (argc >= 2) ? strtoul(argv[1], NULL, 10) : 0UL;
+  if (secs > 36000UL)
+  {
+    console_printf("usage: sleep [0-36000 s]   (0 / none = until RESET)\r\n");
+    return;
+  }
+  fsm_disarm();                 /* belt-and-braces: pyros safe before going dark */
+  datalog_close();              /* flush + close the SD log so it isn't truncated */
+  if (secs)
+    console_printf("sleeping (STOP) ~%lu s — USB drops; wakes on timer or RESET (SW1)\r\n",
+                   secs);
+  else
+    console_printf("sleeping (STOP) — USB drops; press RESET (SW1) to wake\r\n");
+  tx_flush(200);                /* push the farewell out before USB dies */
+  HAL_Delay(20);
+
+  /* Only returns if RTC/LSE bring-up failed; otherwise resets on wake. */
+  if (lowpower_sleep((uint32_t)secs) != 0)
+    console_printf("sleep: RTC/LSE setup failed — staying awake\r\n");
+}
+
 static void cmd_wdtest(int argc, char **argv)
 {
   (void)argc; (void)argv;
@@ -621,6 +836,7 @@ static const cmd_t cmd_table[] =
 {
   { "help",       cmd_help       },
   { "status",     cmd_status     },
+  { "preflight",  cmd_preflight  },
   { "sensors",    cmd_sensors    },
   { "gps",        cmd_gps        },
   { "servo",      cmd_servo      },
@@ -630,15 +846,18 @@ static const cmd_t cmd_table[] =
   { "fire",       cmd_fire       },
   { "zero",       cmd_zero       },
   { "mainalt",    cmd_mainalt    },
+  { "apogee",     cmd_apogee     },
   { "log",        cmd_log        },
   { "cal",        cmd_cal        },
   { "radio",      cmd_radio      },
   { "radiodbg",   cmd_radiodbg   },
+  { "tx",         cmd_tx         },
   { "i2cscan",    cmd_i2cscan    },
   { "charge",     cmd_charge     },
   { "bootloader", cmd_bootloader },
   { "reboot",     cmd_reboot     },
   { "wdtest",     cmd_wdtest     },
+  { "sleep",      cmd_sleep      },
   { "led",        cmd_led        },
 };
 

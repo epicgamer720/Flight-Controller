@@ -1,5 +1,5 @@
 """Round-trip tests for tools/telem_decode.py against the wire layouts in
-shared/protocol.h (telem_packet_t 46 B, command_packet_t 14 B)."""
+shared/protocol.h (telem_packet_t 48 B, command_packet_t 14 B)."""
 
 import os
 import struct
@@ -19,15 +19,17 @@ def pack_telem_raw(magic=td.LINK_MAGIC, version=td.PROTO_VERSION,
                    vel_up_cms=-1234, accel=(-25, 50, 1600),
                    gyro=(15, -100, 3), batt_mv=7912,
                    pyro_cont=0x01, pyro_fired=0x00, sats=11, flags=0x0F,
-                   crc=None):
+                   mcu_temp_c10=235, seq=0, last_evt_state=0, last_evt_count=0,
+                   main_alt_m=150, crc=None):
     """Build a telem packet with raw struct.pack, independent of the module
     under test (only the CRC routine is shared when crc is None)."""
-    body = struct.pack("<BBBBIiiiih3h3hHBBBB",
+    body = struct.pack("<BBBBIiiiih3h3hHBBBBhHBBH",
                        magic, version, ptype, state, t_ms,
                        lat_e7, lon_e7, alt_baro_cm, alt_gps_cm, vel_up_cms,
                        accel[0], accel[1], accel[2],
                        gyro[0], gyro[1], gyro[2],
-                       batt_mv, pyro_cont, pyro_fired, sats, flags)
+                       batt_mv, pyro_cont, pyro_fired, sats, flags,
+                       mcu_temp_c10, seq, last_evt_state, last_evt_count, main_alt_m)
     if crc is None:
         crc = td.crc16_ccitt(body)
     return body + struct.pack("<H", crc)
@@ -35,15 +37,16 @@ def pack_telem_raw(magic=td.LINK_MAGIC, version=td.PROTO_VERSION,
 
 class TestLayoutSizes(unittest.TestCase):
     def test_struct_sizes(self):
-        self.assertEqual(struct.calcsize("<BBBBIiiiih3h3hHBBBBH"), 46)
+        self.assertEqual(struct.calcsize("<BBBBIiiiih3h3hHBBBBhHBBHH"), 54)
         self.assertEqual(struct.calcsize("<BBBBIIH"), 14)
-        self.assertEqual(td.TELEM_LEN, 46)
+        self.assertEqual(td.TELEM_LEN, 54)
         self.assertEqual(td.CMD_LEN, 14)
 
     def test_protocol_constants(self):
         self.assertEqual(td.LINK_MAGIC, 0x52)
-        self.assertEqual(td.PROTO_VERSION, 1)
+        self.assertEqual(td.PROTO_VERSION, 3)
         self.assertEqual(td.PKT_COMMAND, 0x10)
+        self.assertEqual(td.CMD_SET_TX_POWER, 8)
 
 
 class TestParseTelem(unittest.TestCase):
@@ -53,7 +56,7 @@ class TestParseTelem(unittest.TestCase):
 
         # raw fields
         self.assertEqual(d["magic"], 0x52)
-        self.assertEqual(d["version"], 1)
+        self.assertEqual(d["version"], 3)
         self.assertEqual(d["type"], td.PKT_TELEMETRY)
         self.assertEqual(d["state"], 4)
         self.assertEqual(d["state_name"], "COAST")
@@ -70,6 +73,7 @@ class TestParseTelem(unittest.TestCase):
         self.assertEqual(d["pyro_fired"], 0x00)
         self.assertEqual(d["sats"], 11)
         self.assertEqual(d["flags"], 0x0F)
+        self.assertEqual(d["mcu_temp_c10"], 235)
 
         # engineering units
         self.assertAlmostEqual(d["lat_deg"], 39.1234567, places=7)
@@ -80,6 +84,7 @@ class TestParseTelem(unittest.TestCase):
         self.assertEqual(d["accel_g"], [-0.25, 0.5, 16.0])
         self.assertEqual(d["gyro_dps"], [1.5, -10.0, 0.3])
         self.assertAlmostEqual(d["batt_v"], 7.912, places=6)
+        self.assertAlmostEqual(d["mcu_temp_c"], 23.5, places=6)
 
         # flag booleans (0x0F = fix|sat|armed|sd)
         self.assertTrue(d["gps_fix"])
@@ -110,22 +115,31 @@ class TestParseTelem(unittest.TestCase):
 
     def test_bad_version_raises(self):
         with self.assertRaises(ValueError):
-            td.parse_telem(pack_telem_raw(version=2))
+            td.parse_telem(pack_telem_raw(version=1))    # v1 rejected by v2
 
     def test_bad_length_raises(self):
         with self.assertRaises(ValueError):
-            td.parse_telem(pack_telem_raw()[:45])
+            td.parse_telem(pack_telem_raw()[:47])
         with self.assertRaises(ValueError):
             td.parse_telem(pack_telem_raw() + b"\x00")
 
+    def test_mcu_temp_sentinel_is_none(self):
+        d = td.parse_telem(pack_telem_raw(mcu_temp_c10=td.MCU_TEMP_NODATA))
+        self.assertEqual(d["mcu_temp_c10"], td.MCU_TEMP_NODATA)
+        self.assertIsNone(d["mcu_temp_c"])
+        # build_telem default is the sentinel -> None
+        self.assertIsNone(td.parse_telem(td.build_telem())["mcu_temp_c"])
+
     def test_build_telem_parses_back(self):
         buf = td.build_telem(state=1, t_ms=99, alt_baro_cm=-150,
-                             vel_up_cms=25, sats=6, flags=td.FLAG_GPS_FIX)
-        self.assertEqual(len(buf), 46)
+                             vel_up_cms=25, sats=6, flags=td.FLAG_GPS_FIX,
+                             mcu_temp_c10=418)
+        self.assertEqual(len(buf), 54)
         d = td.parse_telem(buf)
         self.assertEqual(d["state_name"], "GROUND_IDLE")
         self.assertAlmostEqual(d["alt_baro_m"], -1.5, places=6)
         self.assertAlmostEqual(d["vel_up_ms"], 0.25, places=6)
+        self.assertAlmostEqual(d["mcu_temp_c"], 41.8, places=6)
         self.assertTrue(d["gps_fix"])
         self.assertFalse(d["armed"])
 
@@ -140,7 +154,7 @@ class TestBuildCommand(unittest.TestCase):
         magic, version, ptype, cmd, arg, nonce, crc = \
             struct.unpack("<BBBBIIH", buf)
         self.assertEqual(magic, 0x52)
-        self.assertEqual(version, 1)
+        self.assertEqual(version, 3)
         self.assertEqual(ptype, 0x10)          # PKT_COMMAND
         self.assertEqual(cmd, td.CMD_SET_MAIN_ALT)
         self.assertEqual(arg, 20000)

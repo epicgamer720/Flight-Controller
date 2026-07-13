@@ -40,6 +40,11 @@
 #define ERR_LIMIT        8      /* consecutive I2C/data failures -> !baro_ok */
 #define STALE_MS         500    /* no fresh conversion for this long -> !baro_ok */
 
+/* ISA standard sea-level temperature (15 degC). The 44330 altitude form
+ * bakes this in; baro_altitude_m() rescales by T_pad/ISA_T0_K for the real
+ * pad temperature. Keep it named — this path is hardware-tuning-sensitive. */
+#define ISA_T0_K         288.15f
+
 static uint8_t  s_addr8;        /* HAL 8-bit address (7-bit << 1), 0 = not found */
 static bool     s_init_ok;
 static uint8_t  s_err_cnt;
@@ -48,6 +53,7 @@ static uint32_t s_fresh_ms;     /* HAL_GetTick of last new conversion */
 static float    s_press_pa;
 static float    s_temp_c;
 static float    s_p0_pa = SEA_LEVEL_PA_DEFAULT;
+static float    s_tpad_k;       /* pad temp (K) latched at baro_zero(); 0 = unset */
 
 static int rd(uint8_t reg, uint8_t *buf, uint16_t len)
 {
@@ -200,7 +206,14 @@ float baro_altitude_m(float press_pa)
 {
     if (press_pa <= 0.0f || s_p0_pa <= 0.0f)
         return 0.0f;
-    return 44330.0f * (1.0f - powf(press_pa / s_p0_pa, 0.190295f));
+    float isa = 44330.0f * (1.0f - powf(press_pa / s_p0_pa, 0.190295f));
+    /* Temperature-compensate: the ISA form assumes T0 = ISA_T0_K (15 degC).
+     * True AGL scales by T_pad/T0, where T_pad is latched at baro_zero().
+     * Unset (0) or implausible T_pad -> factor 1.0 (plain ISA). */
+    float scale = 1.0f;
+    if (s_tpad_k > 200.0f && s_tpad_k < 360.0f)
+        scale = s_tpad_k / ISA_T0_K;
+    return isa * scale;
 }
 
 /* Latch current pressure as AGL zero: average up to 8 fresh conversions.
@@ -227,6 +240,12 @@ void baro_zero(void)
         s_p0_pa = sum / (float)n;
     else if (s_have_data)
         s_p0_pa = s_press_pa;      /* fallback: last known conversion */
+
+    /* Latch pad temperature (K) for baro_altitude_m()'s ISA correction.
+     * fetch_sample() refreshed s_temp_c above; skip if we never got data
+     * (s_tpad_k stays 0 -> altitude falls back to plain ISA). */
+    if (s_have_data)
+        s_tpad_k = s_temp_c + 273.15f;
 }
 
 bool baro_ok(void)

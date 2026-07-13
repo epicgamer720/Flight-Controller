@@ -70,8 +70,9 @@ void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix)
     s_tick++;
 
     uint8_t r = 0, g = 0, b = 0;
-    bool slow_on = (s_tick % (2u * LED_HZ)) < LED_HZ; /* ~0.5 Hz blink */
-    bool fast_on = (s_tick & 1u) != 0;                /* ~2.5 Hz blink */
+    /* Recovery strobe: 1 poll ON (~200 ms) per second, off-phase from the
+     * SD blue-steal tick below so both stay visible. Full brightness. */
+    bool strobe_on = (s_tick % LED_HZ) == 1u;
 
     switch (st) {
     case ST_INIT:
@@ -96,11 +97,11 @@ void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix)
         g = 40; b = 40;                              /* cyan */
         break;
     case ST_LANDED:
-        if (slow_on) g = 48;                         /* slow green blink */
+        if (strobe_on) g = 255;                      /* bright green recovery strobe (found & safe) */
         break;
     case ST_FAULT:
     default:
-        if (fast_on) r = 64;                         /* fast red blink */
+        if (strobe_on) r = 255;                      /* bright red recovery strobe (fault) */
         break;
     }
 
