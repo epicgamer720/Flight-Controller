@@ -62,6 +62,8 @@ let caps = {}, latest = {}, peaks = {}, counters = {};
 let recInfo = { on: false, path: null, rows: 0 };
 let gap = null;
 let recovery = null;              // {distance_m, bearing_deg, pad_lat, pad_lon}
+let sat = null;                   // {ready, half_m, url} pad satellite tile, or null
+let satImg = null, satUrl = null, satLoaded = false;   // cached tile Image
 let eseq = -1, lastNow = -1;
 let ackCount = 0, nakCount = 0;
 let gsTesten = false;              // UI-local only — real testen unknown over radio
@@ -87,6 +89,7 @@ function resetClient(){
   battWarned = battCrited = false;
   staleAlarmed = false;
   recovery = null;
+  sat = null; satImg = null; satUrl = null; satLoaded = false;
   $('ev-body').innerHTML = '';
   $('ev-count').textContent = '';
   $('pyro-result').textContent = '';
@@ -226,6 +229,7 @@ function handleData(d){
   recInfo = d.rec || recInfo;
   gap = (d.gap === undefined) ? null : d.gap;
   recovery = d.recovery || null;
+  sat = d.sat || null;
 
   const lt = (d.tplus && d.tplus.launch_t_host !== undefined)
     ? d.tplus.launch_t_host : null;
@@ -411,6 +415,22 @@ function fmtDist(m){
 /* GPS ground track (9b): project the recorded position buffer (raw lat/lon)
  * to local east/north metres around the first fix, mark the apogee (max baro
  * alt among fixes), and hand it to the equal-aspect GroundTrack canvas. */
+/* Satellite pad tile: cache one Image keyed on its url (same-origin /sat
+ * route, no CORS). Reloads only when the url changes. Returns the draw() bg
+ * arg only once the image is fully loaded; null before/while loading or on
+ * error -> plain grid. */
+function satBg(){
+  if (!(sat && sat.ready && sat.url)) return null;
+  if (sat.url !== satUrl){
+    satUrl = sat.url; satLoaded = false;
+    satImg = new Image();
+    satImg.onload = () => { satLoaded = true; renderGroundTrack(); };
+    satImg.onerror = () => { satLoaded = false; };
+    satImg.src = sat.url;
+  }
+  return (satLoaded && satImg) ? { img: satImg, halfM: sat.half_m } : null;
+}
+
 function renderGroundTrack(){
   const rows = buffers.position;
   if (!rows || !rows.length){ groundTrack.draw([], -1); return; }
@@ -433,7 +453,7 @@ function renderGroundTrack(){
     if (a !== null && a !== undefined && a > amax){ amax = a; ai = i; }
   }
   if (padKnown){ points.unshift([0, 0]); if (ai >= 0) ai += 1; }  // pad at the true pad
-  groundTrack.draw(points, ai);
+  groundTrack.draw(points, ai, satBg());
 }
 
 function renderTiles(){

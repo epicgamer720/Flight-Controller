@@ -619,7 +619,12 @@ class GroundTrack {
     return m.toFixed(1) + ' m';
   }
 
-  draw(points, apogeeIdx){
+  /* bg (optional) = { img: <loaded HTMLImageElement>, halfM: <ground m> } —
+   * a north-up satellite tile covering ±halfM ground metres around the pad
+   * (points[0] == ground 0,0 == image centre). When present and loaded, the
+   * view LOCKS to ±halfM (no auto-fit) and the tile is drawn under the track.
+   * null / not-yet-loaded => unchanged auto-fit grid behaviour. */
+  draw(points, apogeeIdx, bg){
     const ctx = this.ctx;
     const rect = this.canvas.getBoundingClientRect();
     const w = rect.width, h = rect.height;
@@ -649,9 +654,14 @@ class GroundTrack {
 
     /* EQUAL ASPECT: one scale from the larger span so 1 m E == 1 m N on
      * screen. MIN_SPAN floors it so 0/1/identical points never divide by 0. */
+    const bgOn = !!(bg && bg.img && bg.img.complete && bg.img.naturalWidth > 0);
     const MIN_SPAN = 2;
     let midE, midN, scale;
-    if (n === 0 || minE === Infinity){
+    if (bgOn){
+      /* LOCK to ±halfM ground metres centred on the pad (image centre) */
+      midE = 0; midN = 0;
+      scale = Math.min(plotW, plotH) / (2 * bg.halfM);
+    } else if (n === 0 || minE === Infinity){
       midE = 0; midN = 0;
       scale = Math.min(plotW, plotH) / (MIN_SPAN * 8);   // default empty zoom
     } else {
@@ -666,7 +676,13 @@ class GroundTrack {
     /* background grid (metre-aligned) + border */
     ctx.save();
     ctx.beginPath(); ctx.rect(left, top, plotW, plotH); ctx.clip();
+    if (bgOn){
+      /* fill exactly the ±halfM square (centred on the pad) with the tile */
+      const s = bg.halfM * scale;
+      ctx.drawImage(bg.img, cx - s, cy - s, 2 * s, 2 * s);
+    }
     ctx.strokeStyle = THEME.grid; ctx.lineWidth = 1;
+    if (bgOn) ctx.globalAlpha = 0.25;          // grid drawn faintly over imagery
     const eL = Math.ceil((midE - (cx - left) / scale) / step) * step;
     for (let e = eL; px(e) <= right + 0.5; e += step){
       const x = px(e);
@@ -678,11 +694,12 @@ class GroundTrack {
       ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
     }
 
+    if (bgOn) ctx.globalAlpha = 1;
+
     /* flight path + markers (clipped to the plot) */
     if (n > 0){
       if (n >= 2){
-        ctx.strokeStyle = THEME.series[0];
-        ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
         ctx.beginPath();
         let started = false;
         for (let i = 0; i < n; i++){
@@ -690,7 +707,9 @@ class GroundTrack {
           const x = px(p[0]), y = py(p[1]);
           if (!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
         }
-        ctx.stroke();
+        /* over imagery: a card-toned halo under the trace so it stays legible */
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 4; ctx.stroke(); }
+        ctx.strokeStyle = THEME.series[0]; ctx.lineWidth = 2; ctx.stroke();
       }
       /* apogee: distinct diamond + tiny label */
       if (apogeeIdx != null && apogeeIdx >= 0 && apogeeIdx < n && pts[apogeeIdx]){
@@ -700,6 +719,7 @@ class GroundTrack {
         ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y);
         ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath();
         ctx.fill();
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5; ctx.stroke(); }
         ctx.font = '9px Consolas, ui-monospace, monospace';
         ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
         ctx.fillText('apogee', x + 7, y - 3);
@@ -709,12 +729,15 @@ class GroundTrack {
       if (p0){
         ctx.fillStyle = THEME.ink2;
         ctx.fillRect(px(p0[0]) - 4, py(p0[1]) - 4, 8, 8);
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5;
+                   ctx.strokeRect(px(p0[0]) - 4, py(p0[1]) - 4, 8, 8); }
       }
       /* current = last point (filled dot) */
       const pc = pts[n - 1];
       if (pc){
         ctx.fillStyle = THEME.series[0];
         ctx.beginPath(); ctx.arc(px(pc[0]), py(pc[1]), 4, 0, 6.2832); ctx.fill();
+        if (bgOn){ ctx.strokeStyle = THEME.card; ctx.lineWidth = 1.5; ctx.stroke(); }
       }
     }
     ctx.restore();
@@ -734,11 +757,22 @@ class GroundTrack {
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText('N', ax, a0 - 3);
 
-    /* scale hint: metres per grid division (bottom-left) + track extent */
+    /* scale hint: metres per grid division (bottom-left) + track extent.
+     * Over imagery, the bottom-left slot carries the required Esri credit
+     * (Esri tile ToS) on a card chip instead of the grid-step hint. */
     ctx.fillStyle = THEME.ink3;
     ctx.font = '10px Consolas, ui-monospace, monospace';
     ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText('grid ' + this._fmtM(step), left + 2, bottom - 2);
+    if (bgOn){
+      const cr = 'Imagery © Esri';
+      const cw = ctx.measureText(cr).width;
+      ctx.globalAlpha = 0.7; ctx.fillStyle = THEME.card;
+      ctx.fillRect(left + 1, bottom - 13, cw + 6, 12);
+      ctx.globalAlpha = 1; ctx.fillStyle = THEME.ink2;
+      ctx.fillText(cr, left + 4, bottom - 2);
+    } else {
+      ctx.fillText('grid ' + this._fmtM(step), left + 2, bottom - 2);
+    }
     if (n > 0){
       ctx.textAlign = 'right';
       ctx.fillText(this._fmtM(maxE - minE) + ' × ' + this._fmtM(maxN - minN),

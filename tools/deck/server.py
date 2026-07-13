@@ -32,6 +32,7 @@ import re
 import secrets
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import commands as cmdmod
@@ -76,6 +77,43 @@ def _bearing_deg(lat1, lon1, lat2, lon2):
     return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
 
+# --- satellite imagery for the ground track (Esri World Imagery, keyless) ---
+# Offline-first: fetched ONCE server-side when the pad fix is known, cached, and
+# served locally (/sat) so the browser makes no external request; on any failure
+# (no network) the client falls back to the plain grid.
+SAT_HALF_M = 500.0     # image covers +/- this many GROUND metres around the pad
+SAT_PX = 512
+_SAT_URL = ("https://services.arcgisonline.com/arcgis/rest/services/"
+            "World_Imagery/MapServer/export?bbox=%f,%f,%f,%f&bboxSR=3857"
+            "&imageSR=3857&size=%d,%d&format=jpg&f=image")
+
+
+def _merc(lat, lon):
+    """WGS84 lat/lon (deg) -> Web Mercator (EPSG:3857) metres."""
+    r = 6378137.0
+    return (r * math.radians(lon),
+            r * math.log(math.tan(math.pi / 4.0 + math.radians(lat) / 2.0)))
+
+
+def _fetch_sat_image(lat, lon):
+    """Fetch one Esri World Imagery JPEG centred on the pad, covering
+    +/- SAT_HALF_M ground metres. Returns JPEG bytes, or None on any failure
+    (offline / non-image response). Web Mercator stretches by sec(lat), so the
+    requested Mercator half-extent is SAT_HALF_M/cos(lat) to cover the intended
+    ground extent."""
+    try:
+        cx, cy = _merc(lat, lon)
+        h = SAT_HALF_M / max(0.01, math.cos(math.radians(lat)))
+        url = _SAT_URL % (cx - h, cy - h, cx + h, cy + h, SAT_PX, SAT_PX)
+        with urllib.request.urlopen(url, timeout=8.0) as r:
+            data = r.read()
+        if data[:2] == b"\xff\xd8":        # JPEG magic (export returns JSON on error)
+            return data
+    except Exception:
+        pass
+    return None
+
+
 class Deck:
     """Session state: active source + recorder + adapters + peaks/T+."""
 
@@ -94,6 +132,9 @@ class Deck:
         self.tplus = {"launch_t_host": None, "state": None}
         self.pad_fix = None       # {lat, lon, alt_gps_m} snapshot near launch
         self._last_fix = None     # most recent good GPS fix (for pad snapshot)
+        self.sat = None           # ground-track satellite bg: {ready, half_m, url}
+        self._sat_bytes = None    # cached JPEG served at /sat
+        self._sat_tried = False   # one fetch attempt per pad
         self._stop = threading.Event()
         self._poll = None
 
@@ -124,6 +165,9 @@ class Deck:
             self.tplus = {"launch_t_host": None, "state": None}
             self.pad_fix = None
             self._last_fix = None
+            self.sat = None
+            self._sat_bytes = None
+            self._sat_tried = False
             if self.recorder.enabled and kind in ("fc", "gs"):
                 if self.recorder.active:
                     self.recorder.stop()   # rotate: fresh session per source
@@ -227,6 +271,30 @@ class Deck:
                 agl = ag - self.pad_fix["alt_gps_m"]
                 if self.peaks["apogee_gps_m"] is None or agl > self.peaks["apogee_gps_m"]:
                     self.peaks["apogee_gps_m"] = round(agl, 2)
+        self._maybe_fetch_sat()
+
+    def _maybe_fetch_sat(self):
+        """One-shot background fetch of the pad's satellite tile, the first time
+        a pad fix exists. Never blocks the poll thread; on failure sets
+        sat.ready=False so the client falls back to the grid."""
+        if self._sat_tried or self.pad_fix is None:
+            return
+        self._sat_tried = True
+        pad = self.pad_fix
+
+        def work():
+            data = _fetch_sat_image(pad["lat"], pad["lon"])
+            if data:
+                self._sat_bytes = data          # set bytes BEFORE the ready flag
+                self.sat = {"ready": True, "half_m": SAT_HALF_M,
+                            "url": "/sat?c=%.5f,%.5f" % (pad["lat"], pad["lon"])}
+            else:
+                self.sat = {"ready": False}
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def sat_image(self):
+        return self._sat_bytes
 
     def _recovery(self, latest):
         """Bearing + distance from the frozen pad fix to the latest position
@@ -250,7 +318,7 @@ class Deck:
             return {"now": 0, "source": {"kind": None, "connected": False},
                     "rec": self._rec_info(), "latest": {}, "series": {},
                     "peaks": self.peaks, "tplus": self.tplus,
-                    "recovery": None, "counters": {}}
+                    "recovery": None, "sat": None, "counters": {}}
         d = src.drain(since=since)
         return {
             "now": d["now"],
@@ -264,6 +332,7 @@ class Deck:
             "peaks": self.peaks,
             "tplus": dict(self.tplus),
             "recovery": self._recovery(d.get("latest") or {}),
+            "sat": self.sat,
             "capabilities": {n: c.to_dict() for n, c
                              in cmdmod.CAPABILITIES.items()},
         }
@@ -356,6 +425,12 @@ def make_server(deck, ui_dir, host="127.0.0.1", port=8322):
                 self._send(200, deck.events(seq))
             elif self.path.startswith("/ports"):
                 self._send(200, {"ports": list_ports()})
+            elif self.path.startswith("/sat"):
+                img = deck.sat_image()
+                if img is None:
+                    self._send(404, {"error": "no satellite image"})
+                else:
+                    self._send(200, img, "image/jpeg")
             elif self.path == "/" or self.path.startswith(
                     ("/index", "/?")):
                 self._static("index.html", inject_token=True)
