@@ -16,6 +16,9 @@
     <div class="tplus" id="tplus">T&minus; &mdash;</div>
     <span class="stchip t-idle" id="state-chip">&mdash;</span>
     <span class="stchip t-idle" id="armed-chip">&mdash;</span>
+    <span class="livechip" title="mirrors the physical WS2812 status LED on the FC">
+      <span class="leddot" id="led-dot"></span><span id="led-txt">LED</span>
+    </span>
     <span class="h-spacer"></span>
     <span class="livechip"><span class="livedot" id="dot"></span><span id="conn">connecting&hellip;</span></span>
     <span class="livechip"><span class="recdot" id="rec-dot"></span><span id="rec-txt">rec off</span></span>
@@ -143,6 +146,67 @@
           <button class="btn" id="btn-sleep">Sleep</button>
         </div>
         <div class="out" id="out-maint"></div>
+      </div>
+
+      <div class="sec" id="sec-led" hidden>
+        <h3>Status LED &mdash; bench</h3>
+        <div class="row">
+          <label class="small" for="led-bright-sl">Brightness</label>
+          <input type="range" id="led-bright-sl" min="0" max="100" step="1" value="100" style="flex:1">
+          <span class="small mono" id="led-bright-val">100%</span>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-led-cycle">Cycle states</button>
+          <label class="small" for="led-cycle-ms">every</label>
+          <input type="number" id="led-cycle-ms" min="200" max="10000" step="100" value="1500" style="width:70px">
+          <span class="small">ms</span>
+        </div>
+        <div class="row">
+          <label class="small" for="led-state-sel">Set state</label>
+          <select id="led-state-sel" style="flex:1">
+            <option value="INIT">INIT</option>
+            <option value="GROUND_IDLE" selected>GROUND_IDLE</option>
+            <option value="ARMED">ARMED</option>
+            <option value="BOOST">BOOST</option>
+            <option value="COAST">COAST</option>
+            <option value="APOGEE">APOGEE</option>
+            <option value="DROGUE">DROGUE</option>
+            <option value="MAIN">MAIN</option>
+            <option value="DESCENT">DESCENT</option>
+            <option value="LANDED">LANDED</option>
+            <option value="FAULT">FAULT</option>
+          </select>
+          <button class="btn" id="btn-led-state">Hold</button>
+        </div>
+        <div class="row">
+          <label class="small" for="led-effect-sel">Effect</label>
+          <select id="led-effect-sel" style="flex:1">
+            <option value="solid">solid</option>
+            <option value="blink">blink</option>
+            <option value="breathe">breathe</option>
+            <option value="strobe">strobe</option>
+            <option value="rainbow">rainbow</option>
+          </select>
+        </div>
+        <div class="row" id="led-effect-rgb">
+          <label class="small" for="led-r">R</label>
+          <input type="number" id="led-r" min="0" max="255" value="64" style="width:52px">
+          <label class="small" for="led-g">G</label>
+          <input type="number" id="led-g" min="0" max="255" value="0" style="width:52px">
+          <label class="small" for="led-b">B</label>
+          <input type="number" id="led-b" min="0" max="255" value="0" style="width:52px">
+        </div>
+        <div class="row">
+          <label class="small" for="led-period-ms">period</label>
+          <input type="number" id="led-period-ms" min="50" max="60000" value="1000" style="width:80px">
+          <span class="small">ms</span>
+          <button class="btn" id="btn-led-effect">Apply effect</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-led-auto">Stop &mdash; resume normal pattern</button>
+        </div>
+        <div class="hint" id="led-why"></div>
+        <div class="out" id="out-led"></div>
       </div>
 
       <div class="sec" id="sec-radio" hidden>

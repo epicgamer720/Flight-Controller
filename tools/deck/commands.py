@@ -95,6 +95,13 @@ CAPABILITIES = {c.name: c for c in (
     # STOP-mode low power; drops USB then reboots on wake (like reboot)
     Capability("sleep", states=(0, 1), needs_disarmed=True,
                drops_port=True, confirm=True),
+    # status LED bench controls (console-only; firmware also force-clears
+    # any effect the instant armed goes true, so this is defense-in-depth)
+    Capability("ledbright", states=PAD_STATES),
+    Capability("ledcycle", states=(0, 1), needs_disarmed=True),
+    Capability("ledstate", states=(0, 1), needs_disarmed=True),
+    Capability("ledeffect", states=(0, 1), needs_disarmed=True),
+    Capability("ledauto", states=PAD_STATES),
 )}
 
 
@@ -164,6 +171,11 @@ _OK_MARKERS = {
     "reboot": ("rebooting",),
     "bootloader": ("byebye",),
     "wdtest": ("wdtest: halting",),
+    "ledbright": ("brightness=",),
+    "ledcycle": ("cycling all states",),
+    "ledstate": ("holding on",),
+    "ledeffect": ("effect ",),
+    "ledauto": ("state patterns resumed",),
 }
 _FAIL_MARKERS = ("DENIED:", "refused", "err:", "usage:", "FAILED",
                  "unknown cmd")
@@ -195,6 +207,23 @@ class ConsoleCommandAdapter:
             return "tx power %d" % int(args["dbm"])
         if name == "sleep":
             return "sleep %d" % int(args.get("secs", 0))   # 0 = until RESET
+        if name == "ledbright":
+            return "led bright %d" % int(args["pct"])
+        if name == "ledcycle":
+            return "led cycle %d" % int(args.get("period_ms", 1500))
+        if name == "ledstate":
+            return "led state %s" % str(args["state"])
+        if name == "ledeffect":
+            eff = args.get("effect", "off")
+            if eff in ("off",):
+                return "led effect off"
+            if eff == "rainbow":
+                return "led effect rainbow %d" % int(args.get("period_ms", 4000))
+            return "led effect %s %d %d %d %d" % (
+                eff, int(args["r"]), int(args["g"]), int(args["b"]),
+                int(args.get("period_ms", 1000)))
+        if name == "ledauto":
+            return "led auto"
         return name
 
     def send(self, name, args=None, timeout=6.0):
@@ -286,6 +315,43 @@ def _validate_args(name, args):
             return "sleep needs a whole number of seconds"
         if not (0 <= secs <= 36000):
             return "sleep seconds 0..36000 (0 = until RESET)"
+    if name == "ledbright":
+        try:
+            pct = int(args["pct"])
+        except (KeyError, TypeError, ValueError):
+            return "ledbright needs a percent"
+        if not (0 <= pct <= 100):
+            return "brightness 0..100"
+    if name == "ledcycle":
+        try:
+            ms = int(args.get("period_ms", 1500))
+        except (TypeError, ValueError):
+            return "ledcycle needs a numeric period_ms"
+        if not (200 <= ms <= 10000):
+            return "cycle period 200..10000 ms"
+    if name == "ledstate":
+        st = str(args.get("state", ""))
+        if st.upper() not in schema.STATE_NAMES:
+            return "unknown state %r — one of %s" % (st, ", ".join(schema.STATE_NAMES))
+    if name == "ledeffect":
+        eff = args.get("effect")
+        if eff not in ("off", "solid", "blink", "breathe", "strobe", "rainbow"):
+            return "unknown effect %r" % (eff,)
+        if eff not in ("off",):
+            try:
+                ms = int(args.get("period_ms", 4000 if eff == "rainbow" else 1000))
+            except (TypeError, ValueError):
+                return "ledeffect needs a numeric period_ms"
+            lo, hi = (200, 60000) if eff == "rainbow" else (50, 60000)
+            if not (lo <= ms <= hi):
+                return "%s period %d..%d ms" % (eff, lo, hi)
+        if eff not in ("off", "rainbow"):
+            try:
+                r, g, b = int(args["r"]), int(args["g"]), int(args["b"])
+            except (KeyError, TypeError, ValueError):
+                return "%s needs r, g, b" % eff
+            if not all(0 <= v <= 255 for v in (r, g, b)):
+                return "r/g/b 0..255"
     return None
 
 

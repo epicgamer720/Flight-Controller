@@ -199,13 +199,23 @@ never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are 
 | State | Color |
 |---|---|
 | INIT | dim white |
-| GROUND_IDLE | green (bright with GPS fix, dim without; red if armed) |
+| GROUND_IDLE | rainbow cycle with GPS fix, dim green without; red if armed |
 | ARMED | solid red |
 | BOOST / COAST | magenta |
-| APOGEE / DROGUE / MAIN / DESCENT | cyan |
+| APOGEE / DROGUE | cyan |
+| MAIN / DESCENT | amber |
 | LANDED | bright green recovery strobe (~1/s) |
 | FAULT | bright red recovery strobe (~1/s) |
 | SD not logging | blue flash once per second (overlays any state) |
 
-Bench test: `led <r> <g> <b>` shows a raw color for 5 s (`led auto` resumes
-the patterns immediately).
+Bench test (console, pad + disarmed only): `led <r> <g> <b>` shows a raw
+color for 5 s; `led bright <0-100>` sets a global brightness scale (all
+patterns, persists until reboot); `led cycle [period_ms]` steps through
+every flight state so you can preview the mapping above; `led state
+<name|0-10>` holds on one specific state's pattern (e.g. `led state
+LANDED`); `led effect solid|blink|breathe|strobe <r> <g> <b> [period_ms]`
+and `led effect rainbow [period_ms]` run a bench-only pattern; `led auto`
+/ `led effect off` resumes the real flight-state pattern. Arming
+force-clears any active test/effect so it can never mask the ARMED
+indicator. Flight Deck (`tools/flight_deck.py`) exposes all of these as
+a "Status LED — bench" panel when connected over USB.

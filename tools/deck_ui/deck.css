@@ -79,6 +79,20 @@ h1{font-size:20px;font-weight:650;margin:0;letter-spacing:-.01em}
   .livedot.on{animation:pulse 1.6s ease-in-out infinite}
   .recdot.on{animation:pulse 1.2s ease-in-out infinite}
 }
+
+/* LED status dot — mirrors flight-controller/App/status_led.c led_poll() */
+.leddot{width:10px;height:10px;border-radius:50%;background:var(--idle-text);
+        box-shadow:0 0 0 2px transparent;transition:background .2s}
+.leddot.rainbow{animation:led-rainbow 3.2s linear infinite}
+.leddot.strobe{animation:led-strobe 1s steps(1,end) infinite}
+.leddot.sd-warn{box-shadow:0 0 0 2px #2a7fff}
+@keyframes led-rainbow{
+  0%{background:#ff0000}   16.6%{background:#ffea00}
+  33.3%{background:#00ff2f}34.9%{background:#00ff2f}
+  50%{background:#00e5ff}  66.6%{background:#0026ff}
+  83.3%{background:#e600ff}100%{background:#ff0000}
+}
+@keyframes led-strobe{0%,49%{opacity:1}50%,100%{opacity:.12}}
 h2{font-size:12.5px;font-weight:650;letter-spacing:.12em;text-transform:uppercase;
    color:var(--ink-2);margin:22px 0 12px;display:flex;align-items:center;gap:12px}
 h2::after{content:"";flex:1;height:1px;background:var(--line)}

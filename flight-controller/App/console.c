@@ -661,25 +661,161 @@ static void cmd_reboot(int argc, char **argv)
   NVIC_SystemReset();
 }
 
+static int led_parse_rgb(char **argv, unsigned long *r, unsigned long *g, unsigned long *b)
+{
+  *r = strtoul(argv[0], NULL, 10);
+  *g = strtoul(argv[1], NULL, 10);
+  *b = strtoul(argv[2], NULL, 10);
+  return (*r <= 255U) && (*g <= 255U) && (*b <= 255U);
+}
+
 static void cmd_led(int argc, char **argv)
 {
-  /* Bench test for the WS2812 (needs the 5 V rail): show a raw color for
-   * 5 s, then the state patterns resume. `led auto` resumes at once. */
+  /* Bench-only (needs the 5 V rail). Never lets a test/effect mask the
+   * real ARMED indicator — led_poll() force-clears any override/bench
+   * mode the instant armed is true, and these subcommands refuse
+   * up-front too so the console reply is honest. */
   if (argc >= 2 && strcmp(argv[1], "auto") == 0)
   {
     led_override(0);
+    led_bench_stop();
     console_printf("led: state patterns resumed\r\n");
     return;
   }
-  if (argc < 4)
+
+  if (argc == 1)
   {
-    console_printf("usage: led <r> <g> <b> (0-255) | led auto\r\n");
+    led_bench_mode_t m = led_bench_get();
+    console_printf("led: brightness=%u%% mode=%s\r\n",
+                    led_get_brightness(), led_bench_name(m));
+    console_printf("usage: led <r> <g> <b> | led auto | led bright <0-100> |\r\n"
+                    "       led cycle [period_ms] | led state <name|0-10> |\r\n"
+                    "       led effect solid|blink|breathe|strobe <r> <g> <b> [period_ms] |\r\n"
+                    "       led effect rainbow [period_ms] | led effect off\r\n");
     return;
   }
-  unsigned long r = strtoul(argv[1], NULL, 10);
-  unsigned long g = strtoul(argv[2], NULL, 10);
-  unsigned long b = strtoul(argv[3], NULL, 10);
-  if ((r > 255U) || (g > 255U) || (b > 255U))
+
+  if (strcmp(argv[1], "bright") == 0)
+  {
+    if (argc < 3) { console_printf("usage: led bright <0-100>\r\n"); return; }
+    long pct = strtol(argv[2], NULL, 10);
+    if ((pct < 0) || (pct > 100)) { console_printf("err: brightness 0-100\r\n"); return; }
+    led_set_brightness((uint8_t)pct);
+    console_printf("led: brightness=%ld%%\r\n", pct);
+    return;
+  }
+
+  if (strcmp(argv[1], "cycle") == 0 || strcmp(argv[1], "effect") == 0 ||
+      strcmp(argv[1], "state") == 0)
+  {
+    if (g_fsm.armed)
+    {
+      console_printf("DENIED: disarm first (bench effects are disarmed-only)\r\n");
+      return;
+    }
+    if ((g_fsm.state != ST_INIT) && (g_fsm.state != ST_GROUND_IDLE))
+    {
+      console_printf("DENIED: bench effects are pad-only (INIT/GROUND_IDLE)\r\n");
+      return;
+    }
+  }
+
+  if (strcmp(argv[1], "state") == 0)
+  {
+    if (argc < 3)
+    {
+      console_printf("usage: led state <name|0-10> (INIT GROUND_IDLE ARMED BOOST COAST "
+                      "APOGEE DROGUE MAIN DESCENT LANDED FAULT)\r\n");
+      return;
+    }
+    int idx = -1;
+    char *end;
+    long n = strtol(argv[2], &end, 10);
+    if ((*end == '\0') && (n >= 0) && (n <= 10))
+    {
+      idx = (int)n;
+    }
+    else
+    {
+      for (int i = 0; i <= 10; i++)
+      {
+        const char *nm = fsm_state_name((flight_state_t)i);
+        size_t j = 0;
+        for (; nm[j] != '\0' && argv[2][j] != '\0'; j++)
+        {
+          char a = nm[j], c = argv[2][j];
+          if ((a >= 'a') && (a <= 'z')) a = (char)(a - 'a' + 'A');
+          if ((c >= 'a') && (c <= 'z')) c = (char)(c - 'a' + 'A');
+          if (a != c) break;
+        }
+        if ((nm[j] == '\0') && (argv[2][j] == '\0')) { idx = i; break; }
+      }
+    }
+    if (idx < 0)
+    {
+      console_printf("err: unknown state %s\r\n", argv[2]);
+      return;
+    }
+    led_bench_set_state((flight_state_t)idx);
+    console_printf("led: holding on %s\r\n", fsm_state_name((flight_state_t)idx));
+    return;
+  }
+
+  if (strcmp(argv[1], "cycle") == 0)
+  {
+    unsigned long ms = (argc >= 3) ? strtoul(argv[2], NULL, 10) : 1500UL;
+    if ((ms < 200UL) || (ms > 10000UL)) { console_printf("err: period 200-10000 ms\r\n"); return; }
+    led_bench_set(LED_BENCH_CYCLE, 0, 0, 0, (uint16_t)ms);
+    console_printf("led: cycling all states, %lu ms each ('led auto' to stop)\r\n", ms);
+    return;
+  }
+
+  if (strcmp(argv[1], "effect") == 0)
+  {
+    if (argc < 3)
+    {
+      console_printf("usage: led effect solid|blink|breathe|strobe <r> <g> <b> [period_ms] |"
+                      " rainbow [period_ms] | off\r\n");
+      return;
+    }
+    if (strcmp(argv[2], "off") == 0)
+    {
+      led_bench_stop();
+      console_printf("led: effect off (state patterns resumed)\r\n");
+      return;
+    }
+    if (strcmp(argv[2], "rainbow") == 0)
+    {
+      unsigned long ms = (argc >= 4) ? strtoul(argv[3], NULL, 10) : 4000UL;
+      if ((ms < 200UL) || (ms > 60000UL)) { console_printf("err: period 200-60000 ms\r\n"); return; }
+      led_bench_set(LED_BENCH_RAINBOW, 0, 0, 0, (uint16_t)ms);
+      console_printf("led: effect rainbow, %lu ms/cycle\r\n", ms);
+      return;
+    }
+    led_bench_mode_t mode;
+    if (strcmp(argv[2], "solid") == 0)        mode = LED_BENCH_SOLID;
+    else if (strcmp(argv[2], "blink") == 0)   mode = LED_BENCH_BLINK;
+    else if (strcmp(argv[2], "breathe") == 0) mode = LED_BENCH_BREATHE;
+    else if (strcmp(argv[2], "strobe") == 0)  mode = LED_BENCH_STROBE;
+    else { console_printf("err: unknown effect %s\r\n", argv[2]); return; }
+    if (argc < 6) { console_printf("usage: led effect %s <r> <g> <b> [period_ms]\r\n", argv[2]); return; }
+    unsigned long r, g, b;
+    if (!led_parse_rgb(&argv[3], &r, &g, &b)) { console_printf("err: values 0-255\r\n"); return; }
+    unsigned long ms = (argc >= 7) ? strtoul(argv[6], NULL, 10) : 1000UL;
+    if ((ms < 50UL) || (ms > 60000UL)) { console_printf("err: period 50-60000 ms\r\n"); return; }
+    led_bench_set(mode, (uint8_t)r, (uint8_t)g, (uint8_t)b, (uint16_t)ms);
+    console_printf("led: effect %s %lu %lu %lu, %lu ms\r\n", argv[2], r, g, b, ms);
+    return;
+  }
+
+  /* Bare `led <r> <g> <b>`: raw color for 5 s, then state patterns resume. */
+  if (argc < 4)
+  {
+    console_printf("usage: led <r> <g> <b> (0-255) | led auto | led help\r\n");
+    return;
+  }
+  unsigned long r, g, b;
+  if (!led_parse_rgb(&argv[1], &r, &g, &b))
   {
     console_printf("err: values 0-255\r\n");
     return;
@@ -861,13 +997,15 @@ static const cmd_t cmd_table[] =
   { "led",        cmd_led        },
 };
 
+#define MAX_ARGS 8   /* longest command today: `led effect <name> <r> <g> <b> <period_ms>` = 7 */
+
 static void dispatch_line(char *line)
 {
-  char *argv[6];
+  char *argv[MAX_ARGS];
   int argc = 0;
   char *tok = strtok(line, " \t");
 
-  while ((tok != NULL) && (argc < 6))
+  while ((tok != NULL) && (argc < MAX_ARGS))
   {
     argv[argc++] = tok;
     tok = strtok(NULL, " \t");

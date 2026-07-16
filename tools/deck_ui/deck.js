@@ -121,6 +121,44 @@ function fmtTplus(){
 }
 function stateName(st){ return STATE_NAMES[st] || ('#' + st); }
 
+/* mirror of flight-controller/App/status_led.c led_poll() — same state ->
+ * color mapping, so the dashboard shows what the physical LED is doing
+ * without line-of-sight to the board. mode 'rainbow'/'strobe' are CSS
+ * animations (keyframe-driven); exact on-board timing (5 Hz ticks) isn't
+ * reproduced, just the pattern. */
+function ledStatus(st, armed, gpsFix){
+  switch (st){
+    case 0: return { mode:'solid', color:'#cfcfcf', label:'dim white — INIT' };
+    case 1:
+      if (armed) return { mode:'solid', color:'#ff2b2b', label:'red — armed override' };
+      if (gpsFix) return { mode:'rainbow', label:'rainbow — GROUND_IDLE, disarmed, GPS fix' };
+      return { mode:'solid', color:'#1c5c1c', label:'dim green — GROUND_IDLE, no GPS fix' };
+    case 2: return { mode:'solid', color:'#ff2b2b', label:'red — ARMED' };
+    case 3: case 4: return { mode:'solid', color:'#ff33ff', label:'magenta — BOOST/COAST' };
+    case 5: case 6:
+      return { mode:'solid', color:'#20e6e6', label:'cyan — apogee / drogue out (' + stateName(st) + ')' };
+    case 7: case 8:
+      return { mode:'solid', color:'#e6a020', label:'amber — main out / final descent (' + stateName(st) + ')' };
+    case 9: return { mode:'strobe', color:'#20ff20', label:'green strobe — LANDED (recovery)' };
+    case 10: return { mode:'strobe', color:'#ff2020', label:'red strobe — FAULT' };
+    default: return { mode:'solid', color:'var(--idle-text)', label:'unknown state' };
+  }
+}
+function renderLed(st, armed, gpsFix, sdOk){
+  const dot = $('led-dot');
+  if (st === null || st === undefined){
+    dot.className = 'leddot'; dot.style.background = '';
+    dot.parentElement.title = 'mirrors the physical WS2812 status LED on the FC — no data';
+    return;
+  }
+  const ls = ledStatus(st, armed, gpsFix);
+  dot.className = 'leddot' + (ls.mode === 'rainbow' ? ' rainbow' : ls.mode === 'strobe' ? ' strobe' : '');
+  dot.style.background = ls.mode === 'rainbow' ? '' : ls.color;
+  const sdWarn = sdOk === false;
+  dot.classList.toggle('sd-warn', sdWarn);
+  dot.parentElement.title = ls.label + (sdWarn ? ' · SD not logging (blue flash overlay on hardware)' : '');
+}
+
 /* mirror of deck/commands.py _gate_check — the server (and firmware)
  * re-check; this only drives enable/disable + the WHY tooltip */
 function cmdReason(name){
@@ -254,6 +292,7 @@ function onSourceKind(){
   $('gs-testen-warn').hidden = srcKind !== 'gs';
   $('sec-radio').hidden = !(srcKind === 'fc' || srcKind === 'gs');
   $('fc-radio-panel').hidden = srcKind !== 'fc';   // FC's own LoRa radio tiles
+  $('sec-led').hidden = srcKind !== 'fc';          // bench-only, needs the USB console
 }
 
 /* ---------- /events ---------- */
@@ -396,6 +435,8 @@ function renderHeader(){
   } else {
     ac.textContent = '● SAFE'; ac.className = 'stchip t-good';
   }
+
+  renderLed(st, latest.armed, latest.gps_fix, latest.sd_ok);
 
   $('rec-dot').className = 'recdot' + (recInfo.on ? ' on' : '');
   $('rec-txt').textContent = recInfo.on
@@ -602,7 +643,10 @@ const CMD_BTNS = [
   ['cal', 'btn-cal'], ['mainalt', 'btn-mainalt'],
   ['log', 'btn-log-start'], ['log', 'btn-log-stop'],
   ['reboot', 'btn-reboot'], ['bootloader', 'btn-boot'], ['wdtest', 'btn-wdtest'],
-  ['sleep', 'btn-sleep']
+  ['sleep', 'btn-sleep'],
+  ['ledbright', 'led-bright-sl'], ['ledcycle', 'btn-led-cycle'],
+  ['ledstate', 'btn-led-state'],
+  ['ledeffect', 'btn-led-effect'], ['ledauto', 'btn-led-auto']
 ];
 function renderRail(){
   for (const [name, id] of CMD_BTNS){
@@ -614,6 +658,8 @@ function renderRail(){
   }
   const padWhy = cmdReason('zero');                  // representative pad command
   $('pad-why').textContent = padWhy || '';
+
+  $('led-why').textContent = cmdReason('ledcycle') || '';
 
   $('mainalt-cur').textContent =
     (latest.main_alt_m === null || latest.main_alt_m === undefined)
@@ -902,6 +948,47 @@ $('btn-testen').addEventListener('click', () => {
       send, 'Enable');
   } else send();
 });
+
+/* ---------- status LED bench controls ---------- */
+$('led-bright-sl').addEventListener('input', () => {
+  $('led-bright-val').textContent = $('led-bright-sl').value + '%';
+});
+$('led-bright-sl').addEventListener('change', () => {
+  postCmd('ledbright', { pct: parseInt($('led-bright-sl').value, 10) }, $('led-bright-sl'),
+          res => { $('out-led').textContent = resultText(res); });
+});
+
+$('led-effect-sel').addEventListener('change', () => {
+  $('led-effect-rgb').hidden = $('led-effect-sel').value === 'rainbow';
+});
+
+$('btn-led-cycle').addEventListener('click', () => {
+  const ms = parseInt($('led-cycle-ms').value, 10) || 1500;
+  postCmd('ledcycle', { period_ms: ms }, $('btn-led-cycle'),
+          res => { $('out-led').textContent = resultText(res); });
+});
+
+$('btn-led-state').addEventListener('click', () => {
+  postCmd('ledstate', { state: $('led-state-sel').value }, $('btn-led-state'),
+          res => { $('out-led').textContent = resultText(res); });
+});
+
+$('btn-led-effect').addEventListener('click', () => {
+  const eff = $('led-effect-sel').value;
+  const ms = parseInt($('led-period-ms').value, 10) || (eff === 'rainbow' ? 4000 : 1000);
+  const args = { effect: eff, period_ms: ms };
+  if (eff !== 'rainbow'){
+    args.r = parseInt($('led-r').value, 10) || 0;
+    args.g = parseInt($('led-g').value, 10) || 0;
+    args.b = parseInt($('led-b').value, 10) || 0;
+  }
+  postCmd('ledeffect', args, $('btn-led-effect'),
+          res => { $('out-led').textContent = resultText(res); });
+});
+
+$('btn-led-auto').addEventListener('click', () =>
+  postCmd('ledauto', {}, $('btn-led-auto'),
+          res => { $('out-led').textContent = resultText(res); }));
 
 document.querySelectorAll('#servo-rows input[type=range]').forEach(sl => {
   const val = sl.parentElement.querySelector('.servo-val');

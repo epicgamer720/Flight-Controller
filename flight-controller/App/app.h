@@ -92,10 +92,28 @@ void servo_set_us(uint8_t idx, uint16_t us);   /* idx 0..3, clamp 500..2500 */
 uint16_t servo_get_us(uint8_t idx);
 
 /* ---------------- status_led.c — WS2812 on PC13 (best-effort) -------- */
+typedef enum {
+    LED_BENCH_OFF = 0,   /* normal flight-state pattern (led_poll switch) */
+    LED_BENCH_SOLID,     /* fixed r,g,b */
+    LED_BENCH_BLINK,     /* r,g,b on/off, 50% duty, period_ms */
+    LED_BENCH_BREATHE,   /* r,g,b triangle fade, period_ms */
+    LED_BENCH_RAINBOW,   /* full hue wheel, period_ms per cycle */
+    LED_BENCH_STROBE,    /* r,g,b short flash, period_ms between flashes */
+    LED_BENCH_CYCLE,     /* steps through ST_INIT..ST_FAULT, period_ms dwell each */
+    LED_BENCH_STATE,     /* holds on one flight_state_t's pattern (led_bench_set_state) */
+} led_bench_mode_t;
+
 void led_init(void);
-void led_set(uint8_t r, uint8_t g, uint8_t b); /* immediate bit-bang, ~30 us IRQ-off */
+void led_set(uint8_t r, uint8_t g, uint8_t b); /* immediate bit-bang, ~30 us IRQ-off; scaled by led brightness */
 void led_override(uint32_t ms);           /* mute led_poll patterns (bench test) */
-void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix); /* LED_HZ pattern */
+void led_poll(flight_state_t st, bool armed, bool sd_ok, bool gps_fix); /* LED_HZ pattern; force-clears any bench effect while armed */
+void led_set_brightness(uint8_t pct);     /* 0-100, global scale applied in led_set() */
+uint8_t led_get_brightness(void);
+void led_bench_set(led_bench_mode_t mode, uint8_t r, uint8_t g, uint8_t b, uint16_t period_ms); /* bench-only effect, disarmed pad states */
+void led_bench_set_state(flight_state_t st);  /* bench-only: hold on one state's pattern */
+void led_bench_stop(void);                /* resume the normal flight-state pattern */
+led_bench_mode_t led_bench_get(void);
+const char *led_bench_name(led_bench_mode_t m);
 
 /* ---------------- kalman.c — 1-D alt/vel filter ---------------- */
 typedef struct { float alt_m, vel_ms; float P[2][2]; bool init;
