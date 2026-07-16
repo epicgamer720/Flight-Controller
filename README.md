@@ -1,6 +1,6 @@
 # Rocket Flight Controller
 
-A custom, open-source flight computer for model and high-power rockets, built around an STM32F722 (Cortex-M7) with onboard IMU, barometer, GPS, pyro deployment, quad servo outputs, and microSD logging. Designed from scratch in KiCad.
+A custom, open-source flight computer for model and high-power rockets, built around an STM32F722 with onboard IMU, barometer, GPS, pyro deployment, quad servo outputs, and microSD logging. Designed from scratch in KiCad.
 
 
 
@@ -14,14 +14,13 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 - **Active stabilization**: drive the four servo outputs for thrust-vector control or canard/fin steering during boost.
 - **Flight data logging**: log IMU, barometer, and GPS to microSD for post-flight analysis (apogee, max velocity, flight path).
 - **GPS tracking**: downrange tracking and finding the rocket after landing.
-- **Telemetry**: optional LoRa (SX1262, 915 MHz) expansion for live altitude/position downlink.
+- **Telemetry**: LoRa (SX1262, 915 MHz) for live altitude/position downlink.
 - **General avionics dev board**: the IMU + baro + GPS + servo + logging combo also works for drones, RC, robotics, or balloon payloads.
 
 
 
-<img width="849" height="813" alt="image" src="https://github.com/user-attachments/assets/19678770-1fe9-4f89-9dc1-16184f4c644c" />
-<img width="682" height="753" alt="image" src="https://github.com/user-attachments/assets/2e024282-7264-4718-ab76-eee511c1b3b9" />
-<img width="607" height="740" alt="image" src="https://github.com/user-attachments/assets/d1cdeaf3-4803-4a66-af96-be26f582517d" />
+<img width="534" height="664" alt="image" src="https://github.com/user-attachments/assets/0c27bafc-ecf7-4446-b455-adad6f2c6ea1" />
+<img width="647" height="674" alt="image" src="https://github.com/user-attachments/assets/a5afe9e7-80f7-4671-9994-10f5441d8fc8" />
 
 ## Specifications
 
