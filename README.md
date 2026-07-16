@@ -19,8 +19,10 @@ Wanted to get my feet wet with more mixed PCB design. I designed this as a base 
 
 
 
-<img width="534" height="664" alt="image" src="https://github.com/user-attachments/assets/0c27bafc-ecf7-4446-b455-adad6f2c6ea1" />
 <img width="647" height="674" alt="image" src="https://github.com/user-attachments/assets/a5afe9e7-80f7-4671-9994-10f5441d8fc8" />
+<img width="534" height="664" alt="image" src="https://github.com/user-attachments/assets/0c27bafc-ecf7-4446-b455-adad6f2c6ea1" />
+<img width="540" height="672" alt="image" src="https://github.com/user-attachments/assets/8831267f-3fc0-4a06-aba2-5a0d02a1edfa" />
+
 
 ## Specifications
 
