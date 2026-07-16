@@ -1,11 +1,11 @@
 /*---------------------------------------------------------------------------/
-/  FatFs configuration — Flight Controller SD logging (FatFs R0.15)
+/  FatFs configuration: Flight Controller SD logging (FatFs R0.15)
 /  Derived from Middlewares/FatFs/source/ffconf_template.h (FFCONF_DEF 80286).
 /  Deltas from template: CP437, LFN off, no-RTC fixed timestamp 2026,
 /  single volume, fixed 512 B sectors, R/W, no mkfs/exFAT.
 /---------------------------------------------------------------------------*/
 
-#define FFCONF_DEF	80286	/* Revision ID — must match FF_DEFINED in ff.h */
+#define FFCONF_DEF	80286	/* Revision ID, must match FF_DEFINED in ff.h */
 
 /*---------------------------------------------------------------------------/
 / Function Configurations

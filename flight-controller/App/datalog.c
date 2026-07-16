@@ -1,10 +1,10 @@
 /* ============================================================
- * datalog.c — SD binary logging (CLAUDE.md §5.5)
+ * datalog.c: SD binary logging (CLAUDE.md §5.5)
  * 68-byte fixed records -> LOGnnn.BIN via FatFs; human-readable
  * events -> LOGnnn.TXT sidecar. A byte ring decouples the 200 Hz
  * control loop (datalog_push) from SD write latency (datalog_poll,
  * superloop). Any SD/FS error flips sd_ok=false and every entry
- * point becomes a no-op — logging must never block or crash the
+ * point becomes a no-op, since logging must never block or crash the
  * control loop.
  *
  * Alignment invariant: ring capacity and write chunk are exact
@@ -191,7 +191,7 @@ void datalog_poll(uint32_t now_ms)
    * a multiple of RING_CAP, so wrapping would break record alignment
    * (~87 h of continuous logging). k is a RING_CAP multiple, so every
    * offset (idx % RING_CAP) is preserved. Producer and consumer both run
-   * in the superloop thread — safe to adjust both here. */
+   * in the superloop thread, so it's safe to adjust both here. */
   if (s_tail >= 0x40000000u) {
     uint32_t k = (s_tail / RING_CAP) * RING_CAP;
     s_head -= k;
@@ -199,7 +199,7 @@ void datalog_poll(uint32_t now_ms)
   }
 }
 
-/* FAULT-entry flush (CLAUDE.md §5.4 keeps logging in FAULT — files stay
+/* FAULT-entry flush (CLAUDE.md §5.4 keeps logging in FAULT: files stay
  * OPEN; close happens on LANDED only). Bounded drain: at most 4 chunks so
  * a slow card cannot stall the control loop, then f_sync BOTH files so
  * everything already written survives a power loss. */

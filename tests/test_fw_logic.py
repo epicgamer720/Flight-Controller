@@ -21,7 +21,7 @@ IMU_FREEZE_N = 10
 
 
 # ============================================================
-# telemetry.c nonce_fresh — dedup ring, valid-slot tracking, NO floor
+# telemetry.c nonce_fresh: dedup ring, valid-slot tracking, NO floor
 # ============================================================
 class NonceRing:
     def __init__(self):
@@ -146,7 +146,7 @@ class ImuFreeze(unittest.TestCase):
 
 
 # ============================================================
-# state_machine.c fsm_params_apply — apogee_timeout clamp
+# state_machine.c fsm_params_apply: apogee_timeout clamp
 # ============================================================
 MAX_BURN_MS = 6000        # app_config.h
 APOGEE_TIMEOUT_MAX_MS = 120000
@@ -154,9 +154,9 @@ APOGEE_TIMEOUT_MAX_MS = 120000
 
 def apogee_timeout_apply(ms):
     """Mirror fsm_params_apply's clamp: accept ms and return it, else None
-    (keep the compile-time default). Floor is MAX_BURN_MS — the value also
-    drives the fault-independent backup deploy, which fires regardless of
-    state, so anything <= burnout could deploy under thrust."""
+    (keep the compile-time default). Floor is MAX_BURN_MS, since that value
+    also drives the fault-independent backup deploy, which fires regardless
+    of state, so anything <= burnout could deploy under thrust."""
     if MAX_BURN_MS <= ms <= APOGEE_TIMEOUT_MAX_MS:
         return ms
     return None

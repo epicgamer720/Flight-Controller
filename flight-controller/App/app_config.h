@@ -1,6 +1,6 @@
 #pragma once
 /* ============================================================
- * app_config.h — tunable constants (thresholds per CLAUDE.md §5.4)
+ * app_config.h: tunable constants (thresholds per CLAUDE.md §5.4)
  * All flight thresholds must be re-tuned to the motor/airframe.
  * ============================================================ */
 
@@ -18,8 +18,8 @@
 #define TELEM_PERIOD_LANDED_MS  500   /* raised rate for recovery */
 #define PAD_RX_WINDOW_MS        300   /* RX window after each pad TX; TX-only in flight */
 #define TELEM_TX_TIMEOUT_MS     2000  /* force-clear a stuck TX (airtime ~40 ms) */
-#define RADIO_REINIT_PERIOD_MS  5000  /* retry radio_init while dead — ground states only */
-#define SD_RETRY_PERIOD_MS      5000  /* retry datalog_init while dead — ground states only */
+#define RADIO_REINIT_PERIOD_MS  5000  /* retry radio_init while dead, ground states only */
+#define SD_RETRY_PERIOD_MS      5000  /* retry datalog_init while dead, ground states only */
 
 /* ---- Flight detection thresholds ---- */
 #define LAUNCH_G             3.0f    /* |accel| sustained above this ... */
@@ -38,11 +38,11 @@
 #define LAND_DEBOUNCE_MS     10000   /* ... with stable alt for this long => LANDED */
 #define MIN_DROGUE_DELAY_MS  3000    /* never fire drogue sooner than this after launch */
 /* Fault-independent backup deploy fires at g_fsm.apogee_timeout_ms after launch
- * EVEN in ST_FAULT / with dead sensors (bypasses the armed gate) — last line
- * against a lawn-dart. Shares the (tunable) apogee timeout; too early = deploy
+ * EVEN in ST_FAULT / with dead sensors (bypasses the armed gate); it is the last
+ * line against a lawn-dart. Shares the (tunable) apogee timeout; too early = deploy
  * during ascent, so TUNE apogee_timeout to just past expected apogee. */
 
-/* ---- Pyro (per CLAUDE.md §2 — safety-critical) ---- */
+/* ---- Pyro (per CLAUDE.md §2, safety-critical) ---- */
 #define FIRE_PULSE_MS        1000
 #define FIRE_RETRY_MAX       1       /* single retry if continuity persists */
 #define CONT_THRESH_MV       300     /* >this at PC1 (pin mV) = continuity */
@@ -50,10 +50,10 @@
 
 /* ---- Servo main-release (no 2nd pyro on this board; a servo mechanically
  *      releases the main chute at the DROGUE->MAIN deploy point) ----
- * ⚠ MOUNT KNOBS — mechanism-specific; measure the actual release geometry.
+ * ⚠ MOUNT KNOBS, mechanism-specific; measure the actual release geometry.
  * Both endpoints must sit in the 500..2500 us servo range. */
 #define SERVO_DEPLOY_IDX     0       /* which TIM2 servo actuates the release */
-#define SERVO_SAFE_US        1000    /* main retained / held in — SAFE */
+#define SERVO_SAFE_US        1000    /* main retained / held in: SAFE */
 #define SERVO_RELEASE_US     2000    /* main released */
 
 /* ---- Sensors ---- */
@@ -86,14 +86,14 @@
 #define ARM_MAX_LATERAL_G    0.35f   /* off-thrust-axis g ceiling (~20 deg tilt) */
 #define ARM_MIN_VBAT_MV      7000     /* refuse arm below this (2S: ~3.5 V/cell) */
 /* Which IMU axis points skyward when the rocket is vertical on the rail.
- * ⚠ MOUNT KNOB — VERIFY against the airframe before flight. Default assumes the
+ * ⚠ MOUNT KNOB, VERIFY against the airframe before flight. Default assumes the
  * PCB is mounted flat/perpendicular to the rocket axis with the IMU +Z out the
  * nose (the common altimeter convention). If your mount differs, arming will
  * (safely) refuse with code -8 until you set the correct axis + sign here.
  *   0/1/2 = X/Y/Z is skyward; ARM_UP_SIGN = +1 if that axis reads +1 g when
  *           vertical, -1 if it reads -1 g. This rejects on-its-side AND inverted.
  *   -1    = auto-pick the dominant axis: mount-agnostic and never false-refuses,
- *           but only rejects an intermediate TILT — a clean side-lying/inverted
+ *           but only rejects an intermediate TILT: a clean side-lying/inverted
  *           vehicle still passes. Use a concrete axis for a true vertical gate. */
 #define ARM_UP_AXIS          2
 #define ARM_UP_SIGN          1.0f

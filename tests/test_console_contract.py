@@ -37,7 +37,7 @@ TXN_RE = re.compile(r'_txn\(port,\s*"([a-z]+)",\s*b"([^"]+)"')
 POLL = dict(TXN_RE.findall(inspect.getsource(ld.Poller.run)))
 
 # ---------------------------------------------------------------------------
-# Sample replies — verbatim console.c printf formats with values filled in.
+# Sample replies: verbatim console.c printf formats with values filled in.
 # ---------------------------------------------------------------------------
 STATUS_REPLY = (
     "state:   GROUND_IDLE  t=123456ms\r\n"

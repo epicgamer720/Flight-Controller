@@ -6,7 +6,7 @@ continuously, and serves a live-updating dashboard on localhost.
 
     python tools/live_dashboard.py [--port COM9] [--http 8321]
 
-Then open http://localhost:8321 — interactive charts (pan / zoom / pause)
+Then open http://localhost:8321 for interactive charts (pan / zoom / pause)
 over the last 2 minutes of history.
 Note: while this runs it owns the COM port (serial_monitor.py can't
 connect at the same time).
@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 try:
     import serial
 except ImportError:
-    raise SystemExit("pyserial missing — run:  python -m pip install pyserial")
+    raise SystemExit("pyserial missing. Run:  python -m pip install pyserial")
 
 WINDOW_S = 120.0          # rolling buffer window (history headroom for pan-back)
 SENSOR_PERIOD = 0.0       # `sensors` cadence (poll flat-out; serial round-trip is the limit)
@@ -186,7 +186,7 @@ class Poller(threading.Thread):
                 self._trim(self.pyro, now)
 
     def snapshot(self, since=-1.0):
-        """Rows newer than `since` only — the page keeps its own buffer."""
+        """Rows newer than `since` only; the page keeps its own buffer."""
         with self.lock:
             return json.dumps({
                 "connected": self.connected,
@@ -294,24 +294,24 @@ PAGE = r"""<!doctype html>
   <header>
     <div>
       <p class="eyebrow">Darsh Rocketry &middot; Avionics</p>
-      <h1>Flight Controller — Live</h1>
+      <h1>Flight Controller: Live</h1>
     </div>
     <span class="livechip"><span class="livedot" id="dot"></span><span id="conn">connecting&hellip;</span></span>
   </header>
 
   <div class="strip">
-    <div class="chip"><div class="l">State</div><div class="v small" id="st">—</div></div>
-    <div class="chip"><div class="l">Armed</div><div class="v small" id="armed">—</div></div>
-    <div class="chip"><div class="l">Battery</div><div class="v" id="batt">—</div></div>
-    <div class="chip"><div class="l">Alt AGL</div><div class="v" id="alt">—</div></div>
-    <div class="chip"><div class="l">Vel</div><div class="v" id="vel">—</div></div>
-    <div class="chip"><div class="l">GPS</div><div class="v small" id="gps">—</div></div>
-    <div class="chip"><div class="l">Health imu&middot;baro&middot;sd&middot;radio&middot;chg&middot;gps</div><div class="v small" id="health">—</div></div>
-    <div class="chip"><div class="l">Radio</div><div class="v small" id="radio">—</div></div>
-    <div class="chip"><div class="l">Radio link</div><div class="v small" id="rlink">—</div></div>
+    <div class="chip"><div class="l">State</div><div class="v small" id="st">N/A</div></div>
+    <div class="chip"><div class="l">Armed</div><div class="v small" id="armed">N/A</div></div>
+    <div class="chip"><div class="l">Battery</div><div class="v" id="batt">N/A</div></div>
+    <div class="chip"><div class="l">Alt AGL</div><div class="v" id="alt">N/A</div></div>
+    <div class="chip"><div class="l">Vel</div><div class="v" id="vel">N/A</div></div>
+    <div class="chip"><div class="l">GPS</div><div class="v small" id="gps">N/A</div></div>
+    <div class="chip"><div class="l">Health imu&middot;baro&middot;sd&middot;radio&middot;chg&middot;gps</div><div class="v small" id="health">N/A</div></div>
+    <div class="chip"><div class="l">Radio</div><div class="v small" id="radio">N/A</div></div>
+    <div class="chip"><div class="l">Radio link</div><div class="v small" id="rlink">N/A</div></div>
   </div>
 
-  <h2 id="chart-h">Telemetry — last 10 s</h2>
+  <h2 id="chart-h">Telemetry: last 10 s</h2>
   <div class="toolbar">
     <div class="tb-group">
       <span class="tb-label">Span</span>
@@ -365,7 +365,7 @@ PAGE = r"""<!doctype html>
     </div>
   </div>
 
-  <footer>Served locally by <span class="mono">tools/live_dashboard.py</span> — it owns the COM port while running.
+  <footer>Served locally by <span class="mono">tools/live_dashboard.py</span>, which owns the COM port while running.
   Charts: drag to pan, wheel to zoom, double-click (or Live) to follow, Space pauses;
   the filter smooths the displayed trace only. 2 min of history buffered.</footer>
 </div>
@@ -432,7 +432,7 @@ function xStep(span){
   return 60;
 }
 function fmtOff(t, t1, liveEdge){  // axis label: offset of t from the view's right edge
-  const v = t - t1;                // (stable while paused — never tied to the wall clock)
+  const v = t - t1;                // (stable while paused; never tied to the wall clock)
   if (v > -0.05) return liveEdge ? 'now' : '0s';
   return (Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v) : v.toFixed(1)) + 's';
 }
@@ -734,7 +734,7 @@ const chGyr = new CanvasChart('ch-gyro', { buf:'imu', cols:[4,5,6], names:['X','
   scale:1, minSpan:1, dec:1, label:'Gyroscope' });
 const chAlt = new CanvasChart('ch-alt', { buf:'baro', cols:[3], names:['alt'],
   scale:1, minSpan:2, dec:1, label:'Baro altitude',
-  emptyMsg:'no barometer yet — this chart lights up when BMP580 answers' });
+  emptyMsg:'no barometer yet (this chart lights up when BMP580 answers)' });
 const chBat = new CanvasChart('ch-batt', { buf:'batt', cols:[1], names:['V'],
   scale:0.001, minSpan:0.4, dec:2, label:'Battery volts' });
 
@@ -751,7 +751,7 @@ function syncUI(){
   });
   const sp = view.span >= 10 ? Math.round(view.span) : Math.round(view.span * 10) / 10;
   document.getElementById('chart-h').textContent =
-    'Telemetry — last ' + sp + ' s' + (live ? '' : ' (paused)');
+    'Telemetry: last ' + sp + ' s' + (live ? '' : ' (paused)');
 }
 document.querySelectorAll('#seg-span button').forEach(b =>
   b.addEventListener('click', () => setSpan(parseFloat(b.dataset.span))));
@@ -802,28 +802,28 @@ function tick(){
     }
     var dot=document.getElementById('dot');
     dot.className='livedot'+(d.connected?' on':'');
-    setText('conn',d.connected?'live — COM link up':'board not found — plug in USB');
+    setText('conn',d.connected?'live: COM link up':'board not found, plug in USB');
     var s=d.status||{};
-    setText('st',s.state||'—');
-    setText('armed',s.armed===1?'ARMED':(s.armed===0?'safe':'—'));
+    setText('st',s.state||'N/A');
+    setText('armed',s.armed===1?'ARMED':(s.armed===0?'safe':'N/A'));
     document.getElementById('armed').className='v small '+(s.armed===1?'bad':'ok');
-    setText('batt',s.state&&buf.batt.length?(buf.batt[buf.batt.length-1][1]/1000).toFixed(2)+' V':'—');
-    setText('alt',s.alt_m!==undefined?s.alt_m.toFixed(1)+' m':'—');
-    setText('vel',s.vel_ms!==undefined?s.vel_ms.toFixed(1)+' m/s':'—');
-    setText('gps',s.gps_fix===1?('fix · '+s.gps_sats+' sats'):(s.gps_fix===0?'no fix':'—'));
+    setText('batt',s.state&&buf.batt.length?(buf.batt[buf.batt.length-1][1]/1000).toFixed(2)+' V':'N/A');
+    setText('alt',s.alt_m!==undefined?s.alt_m.toFixed(1)+' m':'N/A');
+    setText('vel',s.vel_ms!==undefined?s.vel_ms.toFixed(1)+' m/s':'N/A');
+    setText('gps',s.gps_fix===1?('fix · '+s.gps_sats+' sats'):(s.gps_fix===0?'no fix':'N/A'));
     var h=[s.imu_ok,s.baro_ok,s.sd_ok,s.radio_ok,s.chg_ok,s.gps_ok]
           .filter(function(v){return v!==undefined;});
-    setText('health',h.length===0?'—':h.map(function(v){return v?'●':'○';}).join(' '));
+    setText('health',h.length===0?'N/A':h.map(function(v){return v?'●':'○';}).join(' '));
     var rEl=document.getElementById('radio');
     if(s.radio_txt){
       rEl.textContent=s.radio_txt==='ok'?('ok · '+(s.radio_tcxo==='yes'?'tcxo':'xtal')):'no chip';
       rEl.className='v small '+(s.radio_txt==='ok'?'ok':'bad');
-    } else { rEl.textContent='—'; }
+    } else { rEl.textContent='N/A'; }
     var rl=document.getElementById('rlink');
     if(s.radio_txto!==undefined){
       rl.textContent='txto '+s.radio_txto+' · reinit '+s.radio_reinit;
       rl.className='v small '+(s.radio_txto>0||s.radio_reinit>0?'meh':'ok');
-    } else { rl.textContent='—'; }
+    } else { rl.textContent='N/A'; }
   }).catch(function(){
     document.getElementById('dot').className='livedot';
     setText('conn','dashboard server stopped');

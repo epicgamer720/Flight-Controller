@@ -1,5 +1,5 @@
 /* ============================================================
- * console.c — line-oriented USB-CDC command console.
+ * console.c: line-oriented USB-CDC command console.
  *
  * RX path: usbd_cdc_if RX callback (OTG_FS ISR) -> console_rx()
  *          -> 1 KB SPSC ring -> console_poll() assembles lines.
@@ -11,7 +11,7 @@
  *
  * SAFETY (CLAUDE.md §2): "fire" is honored ONLY when
  *   state == ST_GROUND_IDLE && !armed && test_enabled &&
- *   passcode == TEST_FIRE_PASSCODE  — mirrors CMD_TEST_FIRE.
+ *   passcode == TEST_FIRE_PASSCODE, mirroring CMD_TEST_FIRE.
  * ============================================================ */
 #include "app.h"
 #include "usbd_cdc_if.h"
@@ -143,7 +143,7 @@ static void tx_flush(uint32_t timeout_ms)
 }
 
 /* ============================================================
- * RX from USB ISR — SPSC producer, never blocks
+ * RX from USB ISR: SPSC producer, never blocks
  * ============================================================ */
 void console_rx(const uint8_t *buf, uint32_t len)
 {
@@ -202,7 +202,7 @@ static void cmd_preflight(int argc, char **argv)
   int fail = 0, warn = 0;
   (void)argc; (void)argv;
   /* Aggregate existing health getters into a GO/NO-GO checklist. Pure
-   * read-out — no sensor is pulsed or re-read. Hard checks gate arming;
+   * read-out; no sensor is pulsed or re-read. Hard checks gate arming;
    * WARN items (radio/sd/gps) still allow an SD-logged flight. */
   #define CK(cond, name) do { \
       console_printf("  [%s] %s\r\n", (cond) ? "PASS" : "FAIL", name); \
@@ -369,7 +369,7 @@ static void cmd_testen(int argc, char **argv)
       return;
     }
     g_fsm.test_enabled = true;
-    console_printf("test mode ON — pyro test fire enabled on pad\r\n");
+    console_printf("test mode ON, pyro test fire enabled on pad\r\n");
   }
   else if (strcmp(argv[1], "off") == 0)
   {
@@ -393,7 +393,7 @@ static void cmd_fire(int argc, char **argv)
   ch   = strtoul(argv[1], NULL, 10);
   code = strtoul(argv[2], NULL, 16);
 
-  /* Mirror CLAUDE.md §2 CMD_TEST_FIRE gating — ALL of these, no exceptions: */
+  /* Mirror CLAUDE.md §2 CMD_TEST_FIRE gating: ALL of these, no exceptions: */
   if (g_fsm.state != ST_GROUND_IDLE)
   {
     console_printf("DENIED: not in GROUND_IDLE\r\n");
@@ -455,7 +455,7 @@ static void cmd_mainalt(int argc, char **argv)
   g_fsm.main_alt_m = m;
   console_printf("main_alt = %s m\r\n", ff(g_fsm.main_alt_m));
   {
-    /* Persist (ground states only — param_save gates internally). */
+    /* Persist (ground states only; param_save gates internally). */
     params_t pp;
     fsm_params_snapshot(&pp);
     int rc = param_save(&pp);
@@ -544,7 +544,7 @@ static void cmd_cal(int argc, char **argv)
 {
   (void)argc; (void)argv;
   imu_gyro_cal_start();
-  console_printf("gyro cal started — keep vehicle still (~2 s)\r\n");
+  console_printf("gyro cal started, keep vehicle still (~2 s)\r\n");
 }
 
 static void cmd_radio(int argc, char **argv)
@@ -566,7 +566,7 @@ static void cmd_radio(int argc, char **argv)
   if (radio_ok() && !(LORA_BUSY_PORT->IDR & LORA_BUSY_PIN))
   { /* raw GetIrqStatus (non-clearing): pending bits the chip has latched.
      * TxDone pending here + DIO1 pin low = the DIO1 line is open.
-     * Skipped while BUSY is high — commanding a busy/half-dead chip
+     * Skipped while BUSY is high, since commanding a busy/half-dead chip
      * raw from console context is asking for trouble. */
     uint8_t tx[4] = { 0x12, 0x00, 0x00, 0x00 }, rx[4] = { 0 };
     if (spi_bus_txrx(LORA_CS_PORT, LORA_CS_PIN, tx, rx, 4) == 0)
@@ -646,7 +646,7 @@ static void cmd_charge(int argc, char **argv)
 static void cmd_bootloader(int argc, char **argv)
 {
   (void)argc; (void)argv;
-  console_printf("byebye — entering DFU bootloader\r\n");
+  console_printf("byebye, entering DFU bootloader\r\n");
   tx_flush(200);
   HAL_Delay(50);              /* let the last IN transfer reach the host */
   dfu_enter_bootloader();     /* no return */
@@ -672,7 +672,7 @@ static int led_parse_rgb(char **argv, unsigned long *r, unsigned long *g, unsign
 static void cmd_led(int argc, char **argv)
 {
   /* Bench-only (needs the 5 V rail). Never lets a test/effect mask the
-   * real ARMED indicator — led_poll() force-clears any override/bench
+   * real ARMED indicator: led_poll() force-clears any override/bench
    * mode the instant armed is true, and these subcommands refuse
    * up-front too so the console reply is honest. */
   if (argc >= 2 && strcmp(argv[1], "auto") == 0)
@@ -876,7 +876,7 @@ static void cmd_tx(int argc, char **argv)
       return;
     }
     if (telem_cw((uint32_t)secs) == 0)
-      console_printf("cw ON %lu s @ %d dBm — watch supply current ('tx cw off' to stop)\r\n",
+      console_printf("cw ON %lu s @ %d dBm, watch supply current ('tx cw off' to stop)\r\n",
                      secs, radio_get_tx_power());
     else
       console_printf("err: radio not ready\r\n");
@@ -894,7 +894,7 @@ static void cmd_tx(int argc, char **argv)
     return;
   }
 
-  /* bare 'tx' — transmit dashboard */
+  /* bare 'tx': transmit dashboard */
   {
     uint32_t txc, rxc, txto, reinit;
     int rssi, snr;
@@ -937,16 +937,16 @@ static void cmd_sleep(int argc, char **argv)
   fsm_disarm();                 /* belt-and-braces: pyros safe before going dark */
   datalog_close();              /* flush + close the SD log so it isn't truncated */
   if (secs)
-    console_printf("sleeping (STOP) ~%lu s — USB drops; wakes on timer or RESET (SW1)\r\n",
+    console_printf("sleeping (STOP) ~%lu s; USB drops, wakes on timer or RESET (SW1)\r\n",
                    secs);
   else
-    console_printf("sleeping (STOP) — USB drops; press RESET (SW1) to wake\r\n");
+    console_printf("sleeping (STOP); USB drops, press RESET (SW1) to wake\r\n");
   tx_flush(200);                /* push the farewell out before USB dies */
   HAL_Delay(20);
 
   /* Only returns if RTC/LSE bring-up failed; otherwise resets on wake. */
   if (lowpower_sleep((uint32_t)secs) != 0)
-    console_printf("sleep: RTC/LSE setup failed — staying awake\r\n");
+    console_printf("sleep: RTC/LSE setup failed, staying awake\r\n");
 }
 
 static void cmd_wdtest(int argc, char **argv)
@@ -959,7 +959,7 @@ static void cmd_wdtest(int argc, char **argv)
     console_printf("wdtest refused: ground states + disarmed only\r\n");
     return;
   }
-  console_printf("wdtest: halting (IRQs off) — expect IWDG reset in ~4 s\r\n");
+  console_printf("wdtest: halting (IRQs off), expect IWDG reset in ~4 s\r\n");
   tx_flush(200);
   HAL_Delay(20);
   __disable_irq();
@@ -1022,7 +1022,7 @@ static void dispatch_line(char *line)
       return;
     }
   }
-  console_printf("unknown cmd '%s' — try 'help'\r\n", argv[0]);
+  console_printf("unknown cmd '%s', try 'help'\r\n", argv[0]);
 }
 
 /* ============================================================

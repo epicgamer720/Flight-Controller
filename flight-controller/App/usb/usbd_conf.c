@@ -1,12 +1,12 @@
 /* ============================================================
- * usbd_conf.c — low-level glue: STM32F7 HAL PCD <-> USB Device library.
+ * usbd_conf.c: low-level glue, STM32F7 HAL PCD <-> USB Device library.
  * OTG_FS in DEVICE mode, embedded FS PHY, PA11=DM / PA12=DP (AF10).
  *
  * BOARD CONSTRAINT (CLAUDE.md §3.1): PA9 = LORA_CS and PA10 = LORA_IRQ.
  * The classic OTG VBUS(PA9)/ID(PA10) pins are NOT used and must NEVER
  * be configured here. VBUS sensing is disabled; the F7 HAL then clears
  * GCCFG.VBDEN and forces B-session valid via GOTGCTL.BVALOEN/BVALOVAL
- * (the F7 OTG core has no NOVBUSSENS bit — that is the F4 variant).
+ * (the F7 OTG core has no NOVBUSSENS bit; that is the F4 variant).
  * ============================================================ */
 #include "usbd_conf.h"
 #include "usbd_core.h"
@@ -28,7 +28,7 @@ void HAL_PCD_MspInit(PCD_HandleTypeDef *pcdHandle)
   {
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
-    /* PA11 = USB_OTG_FS_DM, PA12 = USB_OTG_FS_DP — ONLY these two pins. */
+    /* PA11 = USB_OTG_FS_DM, PA12 = USB_OTG_FS_DP: ONLY these two pins. */
     g.Pin       = GPIO_PIN_11 | GPIO_PIN_12;
     g.Mode      = GPIO_MODE_AF_PP;
     g.Pull      = GPIO_NOPULL;
@@ -90,7 +90,7 @@ void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 {
   USBD_LL_Suspend((USBD_HandleTypeDef *)hpcd->pData);
   __HAL_PCD_GATE_PHYCLOCK(hpcd);   /* HAL IRQ handler ungates on wakeup */
-  /* low_power_enable = 0: never STOP the MCU — flight code keeps running */
+  /* low_power_enable = 0: never STOP the MCU, flight code keeps running */
 }
 
 void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)

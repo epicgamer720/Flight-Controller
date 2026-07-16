@@ -1,11 +1,11 @@
 /* ============================================================
- * ism330dhcx.c — ST ISM330DHCX 6-axis IMU on shared SPI1, CS = PA4.
+ * ism330dhcx.c: ST ISM330DHCX 6-axis IMU on shared SPI1, CS = PA4.
  * Part supports SPI mode 0 and mode 3; bus runs mode 0 (SX1262 mandate).
  * Config: XL 416 Hz ±16 g, G 416 Hz ±2000 dps (ODR > CTRL_HZ = 200).
- * FS_XL encoding on this family: 00=±2g, 01=±16g, 10=±4g, 11=±8g —
+ * FS_XL encoding on this family: 00=±2g, 01=±16g, 10=±4g, 11=±8g;
  * ±16 g is code '01', NOT '11'. FS_G: 11=2000 dps.
  * Sensitivities: 0.488 mg/LSB @ ±16 g, 70 mdps/LSB @ 2000 dps.
- * Polled from the superloop only — no ISR shares this state.
+ * Polled from the superloop only; no ISR shares this state.
  * ============================================================ */
 #include "app.h"
 #include <math.h>
@@ -118,7 +118,7 @@ int imu_read(imu_sample_t *s)
 
     /* A stuck bus returns HAL_OK with rail bytes. Real bursts always have
      * structure (accel Z at rest ≈ +1 g ≈ 0x0800 LSB; gyro noise is never
-     * exactly 0 on all 12 bytes) — all-0x00 / all-0xFF is a bus fault, so
+     * exactly 0 on all 12 bytes); all-0x00 / all-0xFF is therefore a bus fault, so
      * count it as a failed read and keep the previous outputs. */
     {
         uint8_t and_all = 0xFFu, or_all = 0x00u;
@@ -134,7 +134,7 @@ int imu_read(imu_sample_t *s)
 
     /* Freeze detect: a stuck bus/sensor can return HAL_OK with a fixed
      * non-rail value. BDU is on and live gyro noise never repeats, so N
-     * byte-identical bursts in a row is a fault — fail the read (feeds the
+     * byte-identical bursts in a row is a fault, so fail the read (feeds the
      * s_imu_fail -> FAULT path) and keep the previous outputs. */
     if (s_have_prev && memcmp(raw, s_prev_raw, sizeof raw) == 0) {
         if (s_same_cnt < 0xFFu) s_same_cnt++;

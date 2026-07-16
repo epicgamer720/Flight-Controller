@@ -2,7 +2,7 @@
 """SIL (software-in-the-loop) regression net for the flight state machine.
 
 There is no host C compiler on this box (only arm-none-eabi cross), so this is
-a *faithful Python transcription* of the deploy-critical firmware — not the C
+a *faithful Python transcription* of the deploy-critical firmware, not the C
 itself. It mirrors, line-for-line where practical (C source refs in comments):
 
     App/state_machine.c   fsm_step / fsm_request_arm / fsm_disarm
@@ -11,7 +11,7 @@ itself. It mirrors, line-for-line where practical (C source refs in comments):
 
 The value here is the adversarial flight profiles + invariant asserts, which are
 backend-agnostic: if a native compiler is ever installed, only FlightSim's guts
-swap to ctypes/subprocess against the real .c — the scenarios and asserts below
+swap to ctypes/subprocess against the real .c, and the scenarios and asserts below
 carry over unchanged.
 
 LOCKSTEP RULE: every deploy-logic edit in App/state_machine.c / pyro.c / kalman.c
@@ -158,7 +158,7 @@ class Kalman:
 
 
 # ============================================================
-# pyro.c — fire gate + fire-pulse state machine
+# pyro.c: fire gate + fire-pulse state machine
 # ============================================================
 PY_IDLE, PY_FIRING, PY_SETTLE = range(3)
 PY_SETTLE_MS = 2 * (1000 // 10)   # CONT_HZ=10 -> 200 ms
@@ -625,8 +625,8 @@ class NominalFlight(unittest.TestCase):
         # Real apogee-detection path (debounce), not the 30 s backup timer,
         # and on the descending side (agl below tracked peak, vel <= 0).
         # NOTE: the deploy lands well below peak because the baro-only Kalman
-        # (KAL_Q_ACCEL=4) lags the ~9.8 m/s^2 coast deceleration — a real
-        # tuning limitation, tracked under the "tune thresholds" open item.
+        # (KAL_Q_ACCEL=4) lags the ~9.8 m/s^2 coast deceleration, a real
+        # tuning limitation tracked under the "tune thresholds" open item.
         f = self.sim.fires[0]
         self.assertFalse(f["by_timeout"], "nominal flight fired on backup timer, not real apogee")
         self.assertLessEqual(f["vel"], 0.0, "deploy must be on the descending side")

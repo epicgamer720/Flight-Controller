@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for tools/deck/commands.py — capability matrix, gate
+"""Unit tests for tools/deck/commands.py: capability matrix, gate
 mirroring, argument validation, verbatim refusal decode, fire-channel
 index translation (console 1-indexed vs GS 0-indexed), ACK/NAK/retry
 with fresh nonces, and passcode redaction. No hardware, no threads."""
@@ -35,7 +35,7 @@ class FakeConsoleSource:
         for prefix, reply in self.replies.items():
             if line.startswith(prefix):
                 return line + "\r\n" + reply
-        return line + "\r\nunknown cmd — try 'help'\r\n"
+        return line + "\r\nunknown cmd, try 'help'\r\n"
 
     def push_event(self, kind, text, severity="info"):
         self.events.append((kind, text, severity))
@@ -193,13 +193,13 @@ class TestConsoleAdapter(unittest.TestCase):
 
     def test_sleep_ok_and_line(self):
         src = FakeConsoleSource(replies={
-            "sleep": "sleeping (STOP) ~30 s — USB drops; wakes on timer or RESET\r\n"})
+            "sleep": "sleeping (STOP) ~30 s, USB drops; wakes on timer or RESET\r\n"})
         res = ConsoleCommandAdapter(src).send("sleep", {"secs": 30})
         self.assertTrue(res.ok)
         self.assertEqual(src.executed, ["sleep 30"])
 
     def test_sleep_default_is_until_reset(self):
-        src = FakeConsoleSource(replies={"sleep": "sleeping (STOP) — press RESET\r\n"})
+        src = FakeConsoleSource(replies={"sleep": "sleeping (STOP), press RESET\r\n"})
         res = ConsoleCommandAdapter(src).send("sleep", {})
         self.assertTrue(res.ok)
         self.assertEqual(src.executed, ["sleep 0"])       # 0 = until RESET

@@ -1,5 +1,5 @@
 /* ============================================================
- * usb_device.h — CDC device on OTG_FS (device mode)
+ * usb_device.h: CDC device on OTG_FS (device mode)
  * ============================================================ */
 #ifndef __USB_DEVICE_H
 #define __USB_DEVICE_H

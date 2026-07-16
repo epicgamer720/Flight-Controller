@@ -1,9 +1,9 @@
 #pragma once
 /* ============================================================
- * gs_pins.h — Ground Station pin map (RP2040 + bare SX1262 + PE4259)
+ * gs_pins.h: Ground Station pin map (RP2040 + bare SX1262 + PE4259)
  *
  * ALL PINS ARE -1 SENTINELS ON PURPOSE. The KiCad schematic is the
- * source of truth (CLAUDE.md §0) — NEVER guess GPIO numbers. Parse
+ * source of truth (CLAUDE.md §0); NEVER guess GPIO numbers. Parse
  * the GS .kicad_sch / exported netlist, fill in every define below,
  * then rebuild. Until then the sketch compiles (with a #warning)
  * but refuses to run at startup with a JSON error on USB-CDC.
@@ -15,14 +15,14 @@
 /* SX1262 SPI chip select. Schematic net: RP2040 GPIO -> SX1262 NSS. */
 #define GS_PIN_LORA_NSS     -1
 
-/* SX1262 DIO1 — primary IRQ line (RxDone/TxDone/Timeout). Schematic net:
+/* SX1262 DIO1: primary IRQ line (RxDone/TxDone/Timeout). Schematic net:
  * SX1262 DIO1 -> RP2040 GPIO. Any RP2040 GPIO is interrupt-capable. */
 #define GS_PIN_LORA_DIO1    -1
 
 /* SX1262 NRESET (active-low reset). Schematic net: RP2040 GPIO -> NRESET. */
 #define GS_PIN_LORA_NRESET  -1
 
-/* SX1262 BUSY — RadioLib waits on this before every command (§3.1;
+/* SX1262 BUSY: RadioLib waits on this before every command (§3.1;
  * skipping BUSY = intermittent failures). Schematic net: BUSY -> GPIO. */
 #define GS_PIN_LORA_BUSY    -1
 
@@ -39,12 +39,12 @@
 /* SPI MISO (RP2040 "RX"): SX1262 MISO -> RP2040 GPIO. */
 #define GS_PIN_SPI_MISO     -1
 
-/* PE4259 RF switch: NO GPIO define — the switch control is driven by
+/* PE4259 RF switch: NO GPIO define. The switch control is driven by
  * SX1262 DIO2 (gs.ino calls radio.setDio2AsRfSwitch(true), §3.1/§6.3).
  * Verify PE4259 control polarity against the schematic (DIO2 high = TX). */
 
 /* ------------------------------------------------------------
- * TCXO vs XTAL on the GS SX1262 — VERIFY FROM THE SCHEMATIC (§3.1).
+ * TCXO vs XTAL on the GS SX1262: VERIFY FROM THE SCHEMATIC (§3.1).
  *   0 = plain 32 MHz XTAL: DIO3 TCXO control stays OFF
  *       (enabling TCXO on an XTAL part makes radio init fail).
  *   1 = TCXO powered from DIO3: configured at LORA_TCXO_V with a
@@ -67,14 +67,14 @@
 #endif
 
 /* ============================================================
- * NAMED DEV-BOARD PROFILE (DEFERRED / UNTESTED) —
+ * NAMED DEV-BOARD PROFILE (DEFERRED / UNTESTED):
  *   "Pico + generic SX1262 breakout", hand-wired for early bring-up.
  *
  * This is an EXAMPLE wiring recipe, not the GS PCB, and it is NOT active:
  * it is commentary only, so it cannot flip GS_PINS_VALID and let the
  * sketch touch the radio on bogus pins. On a hand-wired breakout YOU pick
  * the RP2040 GPIOs, so the numbers below are a CHOICE, not a schematic
- * fact — but the real GS board's pins still come from ITS schematic (§0).
+ * fact, but the real GS board's pins still come from ITS schematic (§0).
  * To try it on a breakout: copy these values up into the -1 defines above
  * and rebuild. Do NOT apply it to the GS PCB. Never compiled or run here.
  *
@@ -86,8 +86,8 @@
  *   GS_PIN_LORA_NRESET  6   -> SX1262 NRESET   / * TODO: confirm from schematic * /
  *   GS_PIN_LORA_BUSY    7   <- SX1262 BUSY     / * TODO: confirm from schematic * /
  *   GS_PIN_LORA_DIO1    8   <- SX1262 DIO1     / * TODO: confirm from schematic * /
- * PE4259 RF switch: no GPIO — driven by SX1262 DIO2 (setDio2AsRfSwitch(true)).
- * GS_RADIO_TCXO: still unknown on the GS chip — the TCXO/XTAL auto-fallback
+ * PE4259 RF switch: no GPIO, driven by SX1262 DIO2 (setDio2AsRfSwitch(true)).
+ * GS_RADIO_TCXO: still unknown on the GS chip; the TCXO/XTAL auto-fallback
  * in ground-station/CLAUDE.md ("Deferred / untested work", item 2) resolves it
  * at runtime rather than hard-coding a guess here.
  * ============================================================ */

@@ -1,11 +1,11 @@
 /* ============================================================
- * spi_bus.c — shared SPI1 transaction helpers (IMU CS=PA4, LoRa CS=PA9)
+ * spi_bus.c: shared SPI1 transaction helpers (IMU CS=PA4, LoRa CS=PA9)
  * Mode 0, ~6.75 MHz, soft GPIO CS, blocking HAL with 100 ms timeout.
  * The superloop serializes bus use naturally; a test-and-set flag
  * catches nesting bugs (e.g. an SPI call from an ISR while a polled
  * transfer is mid-flight) and returns -1 instead of corrupting the bus.
  * SX1262 BUSY-line etiquette is the radio driver's job BEFORE calling
- * these helpers — spi_bus is device-agnostic.
+ * these helpers; spi_bus is device-agnostic.
  * ============================================================ */
 #include "app.h"
 

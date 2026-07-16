@@ -10,7 +10,7 @@
                         (TX confirmation) -> PKT_ACK within ACK_TIMEOUT_S
                         else inferred NAK -> exactly one retry
 
-Safety notes (firmware remains the real gate — this layer only mirrors
+Safety notes (firmware remains the real gate; this layer only mirrors
 it so the operator gets an honest UI):
   * fire is 1-indexed on the console, 0-indexed on the GS stdin grammar;
     the UI speaks 1-indexed everywhere and GsCommandAdapter translates.
@@ -135,19 +135,19 @@ def _gate_check(cap, latest, transport):
     if transport == "console" and not cap.console:
         return "%s is not a console command" % cap.name
     if transport == "gs" and not cap.gs:
-        return "%s is console-only — connect over USB" % cap.name
+        return "%s is console-only, connect over USB" % cap.name
     st = latest.get("state")
     if st is None:
-        return "no telemetry yet — state unknown"
+        return "no telemetry yet, state unknown"
     if st not in PAD_STATES and transport == "gs":
-        return "FC is TX-only in flight — commands disabled"
+        return "FC is TX-only in flight, commands disabled"
     if st not in cap.states:
         return "%s not allowed in %s" % (cap.name, schema.state_name(st))
     if cap.needs_disarmed and latest.get("armed"):
         return "%s requires DISARMED" % cap.name
     if cap.needs_testen and latest.get("testen") is False:
         return "test mode is off (testen on first)"
-    # testen None (unknown over radio) is allowed through — firmware gates.
+    # testen None (unknown over radio) is allowed through; firmware gates.
     return None
 
 
@@ -332,7 +332,7 @@ def _validate_args(name, args):
     if name == "ledstate":
         st = str(args.get("state", ""))
         if st.upper() not in schema.STATE_NAMES:
-            return "unknown state %r — one of %s" % (st, ", ".join(schema.STATE_NAMES))
+            return "unknown state %r, one of %s" % (st, ", ".join(schema.STATE_NAMES))
     if name == "ledeffect":
         eff = args.get("effect")
         if eff not in ("off", "solid", "blink", "breathe", "strobe", "rainbow"):
@@ -367,7 +367,7 @@ def _decode_refusal(name, reply):
             if m:
                 code = int(m.group(1))
                 why = ARM_REFUSAL.get(code, "?")
-                return "%s — %s" % (line, why)
+                return "%s: %s" % (line, why)
             return line
     return None
 
@@ -470,7 +470,7 @@ class GsCommandAdapter:
             if res.nak and name not in ("reboot",):
                 # exactly one retry with a fresh GS nonce
                 self.src.push_event("nak",
-                                    "%s: %s — retrying once"
+                                    "%s: %s, retrying once"
                                     % (name, res.refusal), severity="warn")
                 res = self._attempt(name, line)
             if res.nak:
@@ -479,7 +479,7 @@ class GsCommandAdapter:
                     note = (" (NAK may mean applied to RAM but flash save"
                             " failed, or refused while armed)")
                 elif name == "fire":
-                    note = (" (testen state is unknown over radio — enable"
+                    note = (" (testen state is unknown over radio, enable"
                             " it via the USB console before pad ops)")
                 self.src.push_event("nak", "%s: NAK%s" % (name, note),
                                     severity="warn")

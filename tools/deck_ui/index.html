@@ -13,9 +13,9 @@
       <p class="eyebrow">Darsh Rocketry &middot; Avionics</p>
       <h1>Flight Deck</h1>
     </div>
-    <div class="tplus" id="tplus">T&minus; &mdash;</div>
-    <span class="stchip t-idle" id="state-chip">&mdash;</span>
-    <span class="stchip t-idle" id="armed-chip">&mdash;</span>
+    <div class="tplus" id="tplus">T&minus; &ndash;</div>
+    <span class="stchip t-idle" id="state-chip">&ndash;</span>
+    <span class="stchip t-idle" id="armed-chip">&ndash;</span>
     <span class="livechip" title="mirrors the physical WS2812 status LED on the FC">
       <span class="leddot" id="led-dot"></span><span id="led-txt">LED</span>
     </span>
@@ -26,7 +26,7 @@
     <button class="btn" id="btn-theme" title="theme: auto &rarr; light &rarr; dark (session only)">&#9681; auto</button>
   </header>
 
-  <div id="fault-banner" title="acknowledge FAULT alarm">&#9888; FAULT &mdash; alarm sounding &middot; click to silence</div>
+  <div id="fault-banner" title="acknowledge FAULT alarm">&#9888; FAULT: alarm sounding &middot; click to silence</div>
 
   <div class="cols">
     <!-- ================= command rail ================= -->
@@ -77,12 +77,12 @@
       </div>
 
       <div class="sec" id="sec-pyro">
-        <h3>Pyro &mdash; test fire</h3>
+        <h3>Pyro test fire</h3>
         <div class="row">
-          <button class="btn danger" id="btn-testen">Test-enable: &mdash;</button>
+          <button class="btn danger" id="btn-testen">Test-enable: &ndash;</button>
         </div>
         <div class="hint" id="testen-why"></div>
-        <div class="hint warn" id="gs-testen-warn" hidden>&#9888; testen state unknown over radio &mdash; enable it via the USB console before pad ops</div>
+        <div class="hint warn" id="gs-testen-warn" hidden>&#9888; testen state unknown over radio, enable it via the USB console before pad ops</div>
         <div id="pyro-body" hidden>
           <div class="gates">
             <span class="gchip" id="g-idle">GROUND_IDLE</span>
@@ -96,14 +96,14 @@
             <label class="small" for="passcode">Passcode</label>
             <input type="password" id="passcode" autocomplete="off" autocapitalize="off"
                    spellcheck="false" inputmode="text" style="width:72px"
-                   title="test-fire passcode — never stored, cleared after every attempt">
+                   title="test-fire passcode: never stored, cleared after every attempt">
           </div>
           <div class="fire-wrap">
             <div class="fire-hold" id="fire-hold"
                  aria-label="Hold with the pointer for two seconds to test-fire the selected pyro channel. Releasing or leaving the button before the countdown completes aborts. Keyboard activation is deliberately disabled: firing requires a sustained physical hold.">
               <div class="core">HOLD 2 s<br>TO FIRE</div>
             </div>
-            <div class="hint" id="fire-why">hold 2 s &mdash; release aborts</div>
+            <div class="hint" id="fire-why">hold 2 s, release aborts</div>
           </div>
           <div class="out" id="pyro-result"></div>
         </div>
@@ -141,7 +141,7 @@
         <div class="row">
           <label class="small" for="sleep-secs">Sleep</label>
           <input type="number" id="sleep-secs" min="0" max="36000" step="1" placeholder="0"
-                 style="width:66px" title="seconds — 0 or blank = until RESET (SW1)">
+                 style="width:66px" title="seconds (0 or blank = until RESET, SW1)">
           <span class="small">s</span>
           <button class="btn" id="btn-sleep">Sleep</button>
         </div>
@@ -149,7 +149,7 @@
       </div>
 
       <div class="sec" id="sec-led" hidden>
-        <h3>Status LED &mdash; bench</h3>
+        <h3>Status LED (bench)</h3>
         <div class="row">
           <label class="small" for="led-bright-sl">Brightness</label>
           <input type="range" id="led-bright-sl" min="0" max="100" step="1" value="100" style="flex:1">
@@ -203,7 +203,7 @@
           <button class="btn" id="btn-led-effect">Apply effect</button>
         </div>
         <div class="row">
-          <button class="btn" id="btn-led-auto">Stop &mdash; resume normal pattern</button>
+          <button class="btn" id="btn-led-auto">Stop, resume normal pattern</button>
         </div>
         <div class="hint" id="led-why"></div>
         <div class="out" id="out-led"></div>
@@ -226,46 +226,46 @@
     <!-- ================= main column ================= -->
     <main>
       <div class="tiles" id="kpi-tiles">
-        <div class="tile"><div class="l">Alt AGL</div><div class="v" id="t-alt">&mdash;</div><div class="sub">m</div></div>
-        <div class="tile"><div class="l">Vel</div><div class="v" id="t-vel">&mdash;</div><div class="sub">m/s up</div></div>
-        <div class="tile"><div class="l">Battery</div><div class="v" id="t-batt">&mdash;</div><div class="sub" id="t-batt-sub">V</div></div>
-        <div class="tile"><div class="l">Temp</div><div class="v" id="t-temp">&mdash;</div><div class="sub">&deg;C &middot; baro</div></div>
-        <div class="tile"><div class="l">MCU</div><div class="v" id="t-mcu">&mdash;</div><div class="sub">&deg;C &middot; STM32 die</div></div>
-        <div class="tile"><div class="l">Continuity</div><div class="v small-v" id="t-cont">&mdash;</div><div class="sub" id="t-cont-sub">ch1</div></div>
-        <div class="tile"><div class="l">GPS</div><div class="v small-v" id="t-gps">&mdash;</div><div class="sub" id="t-gps-sub">fix &middot; sats</div></div>
-        <div class="tile peak"><div class="l">Apogee</div><div class="v" id="t-apogee">&mdash;</div><div class="sub" id="t-apogee-sub">peak &middot; m</div></div>
-        <div class="tile peak"><div class="l">Max vel</div><div class="v" id="t-maxvel">&mdash;</div><div class="sub">peak &middot; m/s</div></div>
-        <div class="tile peak"><div class="l">Max |g|</div><div class="v" id="t-maxg">&mdash;</div><div class="sub">peak &middot; g</div></div>
-        <div class="tile peak"><div class="l">Recovery</div><div class="v small-v" id="t-recovery">&mdash;</div><div class="sub" id="t-recovery-sub">bearing &middot; dist</div></div>
+        <div class="tile"><div class="l">Alt AGL</div><div class="v" id="t-alt">&ndash;</div><div class="sub">m</div></div>
+        <div class="tile"><div class="l">Vel</div><div class="v" id="t-vel">&ndash;</div><div class="sub">m/s up</div></div>
+        <div class="tile"><div class="l">Battery</div><div class="v" id="t-batt">&ndash;</div><div class="sub" id="t-batt-sub">V</div></div>
+        <div class="tile"><div class="l">Temp</div><div class="v" id="t-temp">&ndash;</div><div class="sub">&deg;C &middot; baro</div></div>
+        <div class="tile"><div class="l">MCU</div><div class="v" id="t-mcu">&ndash;</div><div class="sub">&deg;C &middot; STM32 die</div></div>
+        <div class="tile"><div class="l">Continuity</div><div class="v small-v" id="t-cont">&ndash;</div><div class="sub" id="t-cont-sub">ch1</div></div>
+        <div class="tile"><div class="l">GPS</div><div class="v small-v" id="t-gps">&ndash;</div><div class="sub" id="t-gps-sub">fix &middot; sats</div></div>
+        <div class="tile peak"><div class="l">Apogee</div><div class="v" id="t-apogee">&ndash;</div><div class="sub" id="t-apogee-sub">peak &middot; m</div></div>
+        <div class="tile peak"><div class="l">Max vel</div><div class="v" id="t-maxvel">&ndash;</div><div class="sub">peak &middot; m/s</div></div>
+        <div class="tile peak"><div class="l">Max |g|</div><div class="v" id="t-maxg">&ndash;</div><div class="sub">peak &middot; g</div></div>
+        <div class="tile peak"><div class="l">Recovery</div><div class="v small-v" id="t-recovery">&ndash;</div><div class="sub" id="t-recovery-sub">bearing &middot; dist</div></div>
       </div>
 
       <div class="sec" id="link-panel">
         <h3>GS link</h3>
         <div class="tiles">
-          <div class="tile"><div class="l">RSSI</div><div class="v" id="t-rssi">&mdash;</div><div class="sub">dBm</div></div>
-          <div class="tile"><div class="l">SNR</div><div class="v" id="t-snr">&mdash;</div><div class="sub">dB</div></div>
-          <div class="tile"><div class="l">Pkt rate</div><div class="v" id="t-rate">&mdash;</div><div class="sub">Hz</div></div>
+          <div class="tile"><div class="l">RSSI</div><div class="v" id="t-rssi">&ndash;</div><div class="sub">dBm</div></div>
+          <div class="tile"><div class="l">SNR</div><div class="v" id="t-snr">&ndash;</div><div class="sub">dB</div></div>
+          <div class="tile"><div class="l">Pkt rate</div><div class="v" id="t-rate">&ndash;</div><div class="sub">Hz</div></div>
           <div class="tile"><div class="l">ACK / NAK</div><div class="v" id="t-acknak">0 / 0</div><div class="sub" id="t-counters"></div></div>
         </div>
         <div class="row" style="margin-top:10px">
           <span class="tb-label">Last packet</span>
           <div class="meter" style="flex:1"><i id="gap-fill"></i></div>
-          <span class="small mono" id="gap-txt">&mdash;</span>
+          <span class="small mono" id="gap-txt">&ndash;</span>
         </div>
       </div>
 
       <div class="sec" id="fc-radio-panel" hidden>
-        <h3>Radio &mdash; FC (LoRa)</h3>
+        <h3>Radio: FC (LoRa)</h3>
         <div class="tiles">
-          <div class="tile"><div class="l">TX power</div><div class="v" id="t-txpower">&mdash;</div><div class="sub">dBm</div></div>
-          <div class="tile"><div class="l">Packets TX</div><div class="v" id="t-txcount">&mdash;</div><div class="sub" id="t-txcount-sub">frames</div></div>
-          <div class="tile"><div class="l">Radio</div><div class="v small-v" id="t-radiohealth">&mdash;</div><div class="sub" id="t-radiohealth-sub">tcxo</div></div>
-          <div class="tile"><div class="l">Last uplink</div><div class="v small-v" id="t-uplink">&mdash;</div><div class="sub">RSSI / SNR dB</div></div>
+          <div class="tile"><div class="l">TX power</div><div class="v" id="t-txpower">&ndash;</div><div class="sub">dBm</div></div>
+          <div class="tile"><div class="l">Packets TX</div><div class="v" id="t-txcount">&ndash;</div><div class="sub" id="t-txcount-sub">frames</div></div>
+          <div class="tile"><div class="l">Radio</div><div class="v small-v" id="t-radiohealth">&ndash;</div><div class="sub" id="t-radiohealth-sub">tcxo</div></div>
+          <div class="tile"><div class="l">Last uplink</div><div class="v small-v" id="t-uplink">&ndash;</div><div class="sub">RSSI / SNR dB</div></div>
         </div>
         <div class="hint" id="fc-radio-hint"></div>
       </div>
 
-      <h2 id="chart-h">Telemetry &mdash; last 30 s</h2>
+      <h2 id="chart-h">Telemetry: last 30 s</h2>
       <div class="toolbar">
         <div class="tb-group">
           <span class="tb-label">Span</span>
@@ -369,9 +369,9 @@
 
       <footer>
         <span id="rec-path"></span><br>
-        Flight Deck &mdash; served locally by <span class="mono">tools/flight_deck.py</span> (it owns the COM port while running).
+        Flight Deck is served locally by <span class="mono">tools/flight_deck.py</span> (it owns the COM port while running).
         Charts: drag to pan, wheel to zoom, double-click (or Live) to follow, Space pauses.
-        Commands are interlocked in the UI and re-checked by the firmware &mdash; the firmware is the real gate.
+        Commands are interlocked in the UI and re-checked by the firmware, which is the real gate.
       </footer>
     </main>
   </div>

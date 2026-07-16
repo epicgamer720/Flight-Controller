@@ -1,5 +1,5 @@
 /* ============================================================
- * kalman.c — 1-D altitude/velocity Kalman filter (baro-driven)
+ * kalman.c: 1-D altitude/velocity Kalman filter (baro-driven)
  *
  * State x = [alt (m), vel_up (m/s)].  F = [[1 dt],[0 1]].
  * Accel (already gravity-compensated, up-positive) is a control input
@@ -10,7 +10,7 @@
 #include "app.h"
 #include <math.h>
 
-#define P_INIT_ALT   1.0e4f    /* m^2   — large: state unknown at reset */
+#define P_INIT_ALT   1.0e4f    /* m^2, large: state unknown at reset */
 #define P_INIT_VEL   1.0e2f    /* (m/s)^2 */
 #define DT_MAX       0.5f      /* clamp after loop stalls */
 
@@ -82,7 +82,7 @@ void kal_update_baro(kalman_t *k, float alt_m)
     /* H = [1 0]; S = p00 + R; K = P H' / S */
     const float r = KAL_R_BARO;
     float s  = p00 + r;
-    if (s <= 0.0f)             /* degenerate — reseed covariance */
+    if (s <= 0.0f)             /* degenerate: reseed covariance */
         s = r;
     float k0 = p00 / s;
     float k1 = p10 / s;
@@ -90,7 +90,7 @@ void kal_update_baro(kalman_t *k, float alt_m)
     float y = alt_m - k->alt_m;
 
     /* Innovation gate: a wild outlier (glitched conversion, vent transient)
-     * must not slam alt/vel — deploy logic keys off them. P keeps growing
+     * must not slam alt/vel, since deploy logic keys off them. P keeps growing
      * via predict while we reject, so the gate widens on its own; after
      * KAL_GATE_MAX_REJECT consecutive rejections accept unconditionally so
      * a genuine altitude step can never be locked out. */

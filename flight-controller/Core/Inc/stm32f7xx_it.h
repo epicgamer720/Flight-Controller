@@ -1,5 +1,5 @@
 /* ============================================================
- * stm32f7xx_it.h — interrupt handler prototypes (FC board rev)
+ * stm32f7xx_it.h: interrupt handler prototypes (FC board rev)
  * ============================================================ */
 #ifndef __STM32F7xx_IT_H
 #define __STM32F7xx_IT_H

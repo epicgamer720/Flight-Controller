@@ -8,7 +8,7 @@
     ReplaySource     .jsonl of recorded GS lines, a session telem.csv, or
                      the synthetic "nominal" flight profile
     GsJsonSource     ground-station USB JSON bridge @115200
-    FcConsoleSource  FC USB console poller — a port of the Poller/_txn
+    FcConsoleSource  FC USB console poller, a port of the Poller/_txn
                      pattern in tools/live_dashboard.py (read-only donor;
                      regexes copied + extended, never imported)
 
@@ -46,7 +46,7 @@ LOG_PERIOD = 5.0
 SENSOR_PERIOD = 0.0       # flat-out; serial round-trip is the limit
 
 # ============================================================
-# FC console scrape regexes — copied from tools/live_dashboard.py and
+# FC console scrape regexes: copied from tools/live_dashboard.py and
 # extended (uptime, main_alt, flags, gps detail, charge, log stat, boot
 # banner, sensors sat).  Formats verified verbatim against
 # flight-controller/App/console.c + App/app_main.c; tests/
@@ -74,7 +74,7 @@ RE_RADIO_IRQ = re.compile(r"chip irq status:\s+0x([0-9A-Fa-f]+)")
 RE_TX_POWER = re.compile(r"power:(-?\d+) dBm")
 RE_TX_PKTS = re.compile(r"packets: tx=(\d+)\s+rx=(\d+)")
 RE_TX_RXQ = re.compile(r"last rx: rssi=(-?\d+) dBm\s+snr=(-?\d+) dB")
-# `status`: "mcu:     23.9 C (die)" — STM32 internal die temp (fc only)
+# `status`: "mcu:     23.9 C (die)" is the STM32 internal die temp (fc only)
 RE_MCU = re.compile(r"mcu:\s+(-?[\d.]+) C")
 RE_CHARGE = re.compile(r"charger: vbat=(\d+) mV stat=0x([0-9A-Fa-f]+) charging=(\d) fault=(\d)")
 RE_LOG = re.compile(r"log:\s+(running|not running)")
@@ -84,7 +84,7 @@ BOOT_BANNER = "=== FC boot ==="
 
 
 # ============================================================
-# LineIngest — the one GS-JSON-line classifier
+# LineIngest: the one GS-JSON-line classifier
 # ============================================================
 class LineIngest:
     """Classify one GS bridge line: feed(line) -> (kind, payload).
@@ -92,7 +92,7 @@ class LineIngest:
     kinds: telem (type==1), event (type==2), ack (type==0x11),
     cmd_echo (parsed 14-byte command echo), uplink_echo ({"uplink":..}),
     gs_boot ({"gs":"boot",..}), gs_error ({"error":..}), junk
-    (unparseable — counted, never raises).
+    (unparseable, counted, never raises).
     """
 
     def __init__(self):
@@ -136,7 +136,7 @@ class LineIngest:
 
 
 def _mask_fire_arg(name, arg):
-    """CMD_TEST_FIRE packs (passcode << 16 | channel) into arg — the
+    """CMD_TEST_FIRE packs (passcode << 16 | channel) into arg; the
     passcode must never reach the event log or any recording."""
     if name == "CMD_TEST_FIRE" and isinstance(arg, int):
         return "****<<16|ch%d" % (arg & 0xFFFF)
@@ -162,7 +162,7 @@ def mask_fire_raw(text):
 
 
 # ============================================================
-# GS JSON serialization — byte-identical to gs.ino emit_telem()
+# GS JSON serialization: byte-identical to gs.ino emit_telem()
 # ============================================================
 def gs_json_line(d, rssi, snr):
     """Serialize a parse_telem() dict exactly like gs.ino emit_telem():
@@ -452,7 +452,7 @@ class _JsonLineSource(Source):
     def __init__(self):
         super().__init__()
         self.ingest = LineIngest()
-        self.listeners = []      # callables (kind, obj, t_host) — called
+        self.listeners = []      # callables (kind, obj, t_host), called
                                  # OUTSIDE the store lock (command adapters)
         self._last_t_ms = None
         self._prev_state = None
@@ -504,7 +504,7 @@ class _JsonLineSource(Source):
                            obj.get("nonce")), t_host)
             return
 
-        # telem / event / ack — all full telemetry-shaped frames
+        # telem / event / ack: all full telemetry-shaped frames
         latest, rows = schema.normalize_telem(obj, t_host, self.src)
         t_ms = obj.get("t_ms")
         st = obj.get("state")
@@ -727,10 +727,10 @@ class ReplaySource(_JsonLineSource):
 # ============================================================
 class GsJsonSource(_JsonLineSource):
     """Ground-station USB JSON bridge: one JSON object per line @115200.
-    Derives its own link stats (rate/gap/rssi/snr/error counters) — the
-    GS emits none.  Reconnects every RECONNECT_S on serial errors; the
+    Derives its own link stats (rate/gap/rssi/snr/error counters), since
+    the GS emits none.  Reconnects every RECONNECT_S on serial errors; the
     port is ALWAYS closed in stop()/finally (a host process dying with
-    the port open can wedge CDC endpoints — project history)."""
+    the port open can wedge CDC endpoints, per project history)."""
 
     src = "gs"
 
@@ -740,7 +740,7 @@ class GsJsonSource(_JsonLineSource):
         self._port = None
         self._rxbuf = b""
         self._txlock = threading.Lock()
-        self.raw_hook = None      # callable(line) — lossless .jsonl capture
+        self.raw_hook = None      # callable(line): lossless .jsonl capture
 
     def send_line(self, line):
         """Write one stdin command line to the GS bridge. Returns False
@@ -758,7 +758,7 @@ class GsJsonSource(_JsonLineSource):
     def _open(self):
         import serial   # lazy: importable without pyserial installed
         # write_timeout: a wedged CDC endpoint can block a Windows serial
-        # write indefinitely (observed: 6+ min) — fail into reconnect.
+        # write indefinitely (observed: 6+ min), so fail into reconnect.
         return serial.Serial(self.com, 115200, timeout=0.05,
                              write_timeout=0.5)
 
@@ -808,7 +808,7 @@ class GsJsonSource(_JsonLineSource):
                 except Exception:
                     self._close_port()
                     self._event("conn",
-                                "GS serial lost — retrying every %gs"
+                                "GS serial lost, retrying every %gs"
                                 % RECONNECT_S, self.now(), severity="warn")
                     continue
                 if data:
@@ -834,12 +834,12 @@ class _PendingCmd:
 
 
 class FcConsoleSource(Source):
-    """FC USB console poller — port of live_dashboard.Poller.
+    """FC USB console poller: port of live_dashboard.Poller.
 
     Priority ladder per _service() pass: queued command -> status 0.5 s
     -> gps 5 s -> radio 5 s -> charge 5 s -> log stat 5 s -> sensors
     flat-out.  execute()/submit() run arbitrary console lines inside the
-    poller thread between transactions (single port owner) — this is the
+    poller thread between transactions (single port owner); this is the
     command hook P2 builds on."""
 
     src = "fc"
@@ -867,7 +867,7 @@ class FcConsoleSource(Source):
         if self._serial_factory is not None:
             return self._serial_factory(self.com)
         import serial   # lazy: importable without pyserial installed
-        # write_timeout: see GsJsonSource._open — wedged CDC blocks writes
+        # write_timeout: see GsJsonSource._open, wedged CDC blocks writes
         return serial.Serial(self.com, 115200, timeout=0.001,
                              write_timeout=0.5)
 
@@ -893,7 +893,7 @@ class FcConsoleSource(Source):
             if chunk:
                 buf += chunk
                 if marker in buf:
-                    tail = port.read(256)   # drain the marker line's tail —
+                    tail = port.read(256)   # drain the marker line's tail:
                     if tail:                # e.g. "sense=" breaks before the
                         buf += tail         # "14168 mV" that follows it
                     break
@@ -1008,7 +1008,7 @@ class FcConsoleSource(Source):
                 except Exception:
                     self._close_port()
                     self._event("conn",
-                                "FC console lost — retrying every %gs"
+                                "FC console lost, retrying every %gs"
                                 % RECONNECT_S, self.now(), severity="warn")
         finally:
             self._close_port()   # ALWAYS release COM (CDC-wedge history)
@@ -1179,7 +1179,7 @@ class FcConsoleSource(Source):
 
     def _parse_tx(self, out, now):
         """`tx` dashboard: TX power, packet counts, last-RX link quality.
-        This is the FC's own radio state — the 'GS link' panel is downlink-
+        This is the FC's own radio state; the 'GS link' panel is downlink-
         as-seen-by-the-GS, so the FC-console path surfaces these instead."""
         self._scan_boot(out, now)
         with self._lock:

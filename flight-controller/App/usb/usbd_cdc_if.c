@@ -1,5 +1,5 @@
 /* ============================================================
- * usbd_cdc_if.c — CDC ACM interface callbacks.
+ * usbd_cdc_if.c: CDC ACM interface callbacks.
  * RX: OUT-EP data -> console_rx() (ISR context) -> re-arm endpoint.
  * TX: cdc_transmit() copies into a static buffer; busy until
  *     TransmitCplt fires from the OTG_FS ISR.

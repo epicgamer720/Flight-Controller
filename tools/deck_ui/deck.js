@@ -1,7 +1,7 @@
-/* deck.js — Flight Deck UI controller.
+/* deck.js: Flight Deck UI controller.
  *
  * Self-pacing fetch loop for /data + /events (fetch -> then -> setTimeout
- * ~50 ms; NEVER setInterval — a setInterval version froze a tab in this
+ * ~50 ms; NEVER setInterval (a setInterval version froze a tab in this
  * project). Fills the named chart buffers (chart.js), wires every tile /
  * panel / rail control, mirrors the firmware interlocks from the server's
  * capability matrix, and runs the pyro hold-to-fire ladder.
@@ -52,7 +52,7 @@ new CanvasChart('ch-rate',  { buf:'rate',  cols:[1],     names:['Hz'],
   scale:1, minSpan:1,   dec:1, label:'Packet rate' });
 new CanvasChart('ch-pyro',  { buf:'pyro',  cols:[1],     names:['mV'],
   scale:1, minSpan:50,  dec:0, label:'Pyro sense millivolts',
-  emptyMsg:'console only — no pyro sense on this source' });
+  emptyMsg:'console only, no pyro sense on this source' });
 new StateTimeline('timeline-box');
 const groundTrack = new GroundTrack($('ground-track'));
 
@@ -66,7 +66,7 @@ let sat = null;                   // {ready, half_m, url} pad satellite tile, or
 let satImg = null, satUrl = null, satLoaded = false;   // cached tile Image
 let eseq = -1, lastNow = -1;
 let ackCount = 0, nakCount = 0;
-let gsTesten = false;              // UI-local only — real testen unknown over radio
+let gsTesten = false;              // UI-local only, since the real testen state is unknown over radio
 let replayPaused = false;
 let battWarned = false, battCrited = false;
 let staleAlarmed = false;         // telemetry-loss alarm hysteresis
@@ -107,10 +107,10 @@ function resetClient(){
 /* ---------- helpers ---------- */
 function fmt(v, d){
   return (v === null || v === undefined || Number.isNaN(Number(v)))
-    ? '—' : Number(v).toFixed(d);
+    ? '–' : Number(v).toFixed(d);
 }
 function fmtTplus(){
-  if (launchT === null) return 'T− —';
+  if (launchT === null) return 'T− –';
   const dt = dataNow - launchT;
   const sign = dt < 0 ? 'T−' : 'T+';
   const a = Math.abs(dt);
@@ -121,26 +121,26 @@ function fmtTplus(){
 }
 function stateName(st){ return STATE_NAMES[st] || ('#' + st); }
 
-/* mirror of flight-controller/App/status_led.c led_poll() — same state ->
+/* mirror of flight-controller/App/status_led.c led_poll(), same state ->
  * color mapping, so the dashboard shows what the physical LED is doing
  * without line-of-sight to the board. mode 'rainbow'/'strobe' are CSS
  * animations (keyframe-driven); exact on-board timing (5 Hz ticks) isn't
  * reproduced, just the pattern. */
 function ledStatus(st, armed, gpsFix){
   switch (st){
-    case 0: return { mode:'solid', color:'#cfcfcf', label:'dim white — INIT' };
+    case 0: return { mode:'solid', color:'#cfcfcf', label:'dim white: INIT' };
     case 1:
-      if (armed) return { mode:'solid', color:'#ff2b2b', label:'red — armed override' };
-      if (gpsFix) return { mode:'rainbow', label:'rainbow — GROUND_IDLE, disarmed, GPS fix' };
-      return { mode:'solid', color:'#1c5c1c', label:'dim green — GROUND_IDLE, no GPS fix' };
-    case 2: return { mode:'solid', color:'#ff2b2b', label:'red — ARMED' };
-    case 3: case 4: return { mode:'solid', color:'#ff33ff', label:'magenta — BOOST/COAST' };
+      if (armed) return { mode:'solid', color:'#ff2b2b', label:'red: armed override' };
+      if (gpsFix) return { mode:'rainbow', label:'rainbow: GROUND_IDLE, disarmed, GPS fix' };
+      return { mode:'solid', color:'#1c5c1c', label:'dim green: GROUND_IDLE, no GPS fix' };
+    case 2: return { mode:'solid', color:'#ff2b2b', label:'red: ARMED' };
+    case 3: case 4: return { mode:'solid', color:'#ff33ff', label:'magenta: BOOST/COAST' };
     case 5: case 6:
-      return { mode:'solid', color:'#20e6e6', label:'cyan — apogee / drogue out (' + stateName(st) + ')' };
+      return { mode:'solid', color:'#20e6e6', label:'cyan: apogee / drogue out (' + stateName(st) + ')' };
     case 7: case 8:
-      return { mode:'solid', color:'#e6a020', label:'amber — main out / final descent (' + stateName(st) + ')' };
-    case 9: return { mode:'strobe', color:'#20ff20', label:'green strobe — LANDED (recovery)' };
-    case 10: return { mode:'strobe', color:'#ff2020', label:'red strobe — FAULT' };
+      return { mode:'solid', color:'#e6a020', label:'amber: main out / final descent (' + stateName(st) + ')' };
+    case 9: return { mode:'strobe', color:'#20ff20', label:'green strobe: LANDED (recovery)' };
+    case 10: return { mode:'strobe', color:'#ff2020', label:'red strobe: FAULT' };
     default: return { mode:'solid', color:'var(--idle-text)', label:'unknown state' };
   }
 }
@@ -148,7 +148,7 @@ function renderLed(st, armed, gpsFix, sdOk){
   const dot = $('led-dot');
   if (st === null || st === undefined){
     dot.className = 'leddot'; dot.style.background = '';
-    dot.parentElement.title = 'mirrors the physical WS2812 status LED on the FC — no data';
+    dot.parentElement.title = 'mirrors the physical WS2812 status LED on the FC (no data)';
     return;
   }
   const ls = ledStatus(st, armed, gpsFix);
@@ -159,29 +159,29 @@ function renderLed(st, armed, gpsFix, sdOk){
   dot.parentElement.title = ls.label + (sdWarn ? ' · SD not logging (blue flash overlay on hardware)' : '');
 }
 
-/* mirror of deck/commands.py _gate_check — the server (and firmware)
+/* mirror of deck/commands.py _gate_check: the server (and firmware)
  * re-check; this only drives enable/disable + the WHY tooltip */
 function cmdReason(name){
   if (!srcKind) return 'no source connected';
-  if (srcKind === 'replay') return 'replay source — commands disabled';
+  if (srcKind === 'replay') return 'commands are disabled on a replay source';
   const cap = caps[name];
   if (!cap) return 'capabilities not loaded yet';
-  if (srcKind === 'gs' && !cap.gs) return name + ' is console-only — connect the FC over USB';
+  if (srcKind === 'gs' && !cap.gs) return name + ' is console-only (connect the FC over USB)';
   const st = latest.state;
-  if (st === null || st === undefined) return 'no telemetry yet — state unknown';
+  if (st === null || st === undefined) return 'no telemetry yet, state unknown';
   if (srcKind === 'gs' && PAD_STATES.indexOf(st) < 0)
-    return 'FC is TX-only in flight — commands disabled';
+    return 'FC is TX-only in flight, so commands are disabled';
   if (cap.states.indexOf(st) < 0) return name + ' not allowed in ' + stateName(st);
-  if (cap.needs_disarmed && latest.armed) return name + ' requires DISARMED — disarm first';
+  if (cap.needs_disarmed && latest.armed) return name + ' requires DISARMED, disarm first';
   if (cap.needs_testen && latest.testen === false) return 'test mode is off (testen on first)';
   return null;
 }
 
 /* ---------- command POST (parallel to the data loop; busy state) ---------- */
 /* a 403 means our injected token no longer matches (server restarted under
- * the open tab) — its body has none of the ok/refusal/error keys the
+ * the open tab). Its body has none of the ok/refusal/error keys the
  * renderers look at, so synthesize one that every result path understands */
-const STALE_MSG = 'session token stale — reload the page';
+const STALE_MSG = 'session token stale, reload the page';
 function postJSON(path, body){
   return fetch(path, {
     method: 'POST',
@@ -305,9 +305,10 @@ function handleEvents(e){
     switch (ev.kind){
       /* counters count each command OUTCOME once (the log shows every
        * event): a success emits both the ingest-level "PKT_ACK received"
-       * and the adapter-level "<cmd>: ACK" — only the latter counts; a
-       * timeout emits an interim "… — retrying once" nak plus the final
-       * "<cmd>: NAK…" / "<cmd>: no reply…" — the interim never counts. */
+       * and the adapter-level "<cmd>: ACK" message; only the latter counts.
+       * A timeout emits an interim "retrying once" nak plus a final
+       * "<cmd>: NAK…" / "<cmd>: no reply…" message; the interim one never
+       * counts. */
       case 'ack':
         if (/: ACK$/.test(ev.text || '')) ackCount++;
         break;
@@ -389,10 +390,10 @@ function addLogRow(ev){
   tr.dataset.kind = ev.kind;
   const tp = launchT !== null && ev.t_host !== null
     ? (ev.t_host - launchT >= 0 ? 'T+' : 'T−') + Math.abs(ev.t_host - launchT).toFixed(1)
-    : '—';
+    : '–';
   const tdTp = document.createElement('td'); tdTp.className = 't'; tdTp.textContent = tp;
   const tdT = document.createElement('td'); tdT.className = 't';
-  tdT.textContent = (ev.t_host === null ? '—' : ev.t_host.toFixed(1) + 's');
+  tdT.textContent = (ev.t_host === null ? '–' : ev.t_host.toFixed(1) + 's');
   const tdSev = document.createElement('td');
   const sev = document.createElement('span');
   sev.className = 'sev sev-' + (ev.severity || 'info');
@@ -415,21 +416,21 @@ function applyEvFilter(){
 function renderHeader(){
   $('dot').className = 'livedot' + (connected ? ' on' : '');
   $('conn').textContent = srcKind
-    ? srcKind + (srcPort ? ' · ' + srcPort : '') + (connected ? '' : ' — no link')
+    ? srcKind + (srcPort ? ' · ' + srcPort : '') + (connected ? '' : ' (no link)')
     : 'no source';
   $('tplus').textContent = fmtTplus();
 
   const st = latest.state;
   const chip = $('state-chip');
   if (st === null || st === undefined){
-    chip.textContent = '—'; chip.className = 'stchip t-idle';
+    chip.textContent = '–'; chip.className = 'stchip t-idle';
   } else {
     chip.textContent = latest.state_name || stateName(st);
     chip.className = 'stchip t-' + (STATE_TONE[st] || 'idle');
   }
   const ac = $('armed-chip');
   if (latest.armed === null || latest.armed === undefined){
-    ac.textContent = '—'; ac.className = 'stchip t-idle';
+    ac.textContent = '–'; ac.className = 'stchip t-idle';
   } else if (latest.armed){
     ac.textContent = '⚠ ARMED'; ac.className = 'stchip t-crit';
   } else {
@@ -449,7 +450,7 @@ function compass(deg){
   return ['N','NE','E','SE','S','SW','W','NW'][Math.round((((deg % 360) + 360) % 360) / 45) % 8];
 }
 function fmtDist(m){
-  if (m === null || m === undefined) return '—';
+  if (m === null || m === undefined) return '–';
   return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
 }
 
@@ -479,7 +480,7 @@ function renderGroundTrack(){
   // rolling-window trim), so the pad marker + projection stay correct even for
   // flights longer than the window; fall back to the first buffered fix before
   // a pad is known. (apogee marker is best-effort: max baro alt among buffered
-  // fixes — for a >130 s flight the true apogee fix may have aged out.)
+  // fixes; for a >130 s flight the true apogee fix may have aged out.)
   let lat0, lon0, padKnown = false;
   if (recovery && recovery.pad_lat != null && recovery.pad_lon != null){
     lat0 = recovery.pad_lat; lon0 = recovery.pad_lon; padKnown = true;
@@ -519,7 +520,7 @@ function renderTiles(){
   const pc = latest.pyro_cont;
   const c = $('t-cont'), cs = $('t-cont-sub');
   if (pc === null || pc === undefined){
-    c.textContent = '—'; c.className = 'v small-v'; cs.textContent = 'ch1';
+    c.textContent = '–'; c.className = 'v small-v'; cs.textContent = 'ch1';
   } else if (pc & 1){
     c.textContent = '● CONT'; c.className = 'v small-v ok'; cs.textContent = 'ch1 e-match present';
   } else {
@@ -529,7 +530,7 @@ function renderTiles(){
   const gf = latest.gps_fix;
   const g = $('t-gps'), gs2 = $('t-gps-sub');
   if (gf === null || gf === undefined){
-    g.textContent = '—'; g.className = 'v small-v'; gs2.textContent = 'fix · sats';
+    g.textContent = '–'; g.className = 'v small-v'; gs2.textContent = 'fix · sats';
   } else if (gf){
     g.textContent = '● FIX'; g.className = 'v small-v ok';
     gs2.textContent = (latest.sats === undefined ? '?' : latest.sats) + ' sats';
@@ -558,7 +559,7 @@ function renderTiles(){
     rs.textContent = fmtDist(recovery.distance_m);
     rc.className = 'v small-v ok';
   } else {
-    rc.textContent = '—'; rc.className = 'v small-v'; rs.textContent = 'bearing · dist';
+    rc.textContent = '–'; rc.className = 'v small-v'; rs.textContent = 'bearing · dist';
   }
 }
 
@@ -579,7 +580,7 @@ function renderLink(){
   const warn = inFlight ? 1 : 3, crit = inFlight ? 3 : 10;
   const fill = $('gap-fill'), txt = $('gap-txt');
   if (gap === null || gap === undefined){
-    fill.style.width = '0%'; fill.className = ''; txt.textContent = '—';
+    fill.style.width = '0%'; fill.className = ''; txt.textContent = '–';
   } else {
     fill.style.width = Math.min(100, gap / crit * 100).toFixed(1) + '%';
     fill.className = gap > crit ? 'bad' : (gap > warn ? 'meh' : '');
@@ -595,44 +596,44 @@ function renderLink(){
 }
 
 /* Radio section: TX power control on both paths.
- *  - FC (USB): live `tx` dashboard scrape — power, packets tx/rx, last-RX
+ *  - FC (USB): live `tx` dashboard scrape: power, packets tx/rx, last-RX
  *    link quality (the 'GS link' panel is downlink-as-seen-by-the-GS).
  *  - GS (radio): the control sends CMD_SET_TX_POWER over the air; the FC
  *    doesn't report its own power back, so no live readout. */
 function renderRadio(){
   if (srcKind !== 'fc' && srcKind !== 'gs') return;   // control hidden otherwise
-  /* TX-power SET control gating (both paths) — command results own
+  /* TX-power SET control gating (both paths); command results own
    * #radio-stats, so this never overwrites them per frame. */
   const why = cmdReason('power');
   const btn = $('btn-txpower'), inp = $('txpower');
   if (!btn.classList.contains('busy')){ btn.disabled = !!why; inp.disabled = !!why; }
   $('radio-why').textContent = why ||
-    (srcKind === 'gs' ? 'over-air — FC applies on its next pad RX window' : '');
+    (srcKind === 'gs' ? 'sent over the air, the FC applies it on its next pad RX window' : '');
   const p = latest.tx_power_dbm;
   $('txpower-cur').textContent = (p == null) ? '' : 'now ' + p + ' dBm';
   if (srcKind !== 'fc') return;   // downlink RSSI/SNR/rate live in the GS-link panel
 
   /* FC's own LoRa radio (read over SPI, scraped from the `tx` console cmd) */
-  $('t-txpower').textContent = (p == null) ? '—' : p;
-  $('t-txcount').textContent = (latest.tx_count == null) ? '—' : latest.tx_count;
+  $('t-txpower').textContent = (p == null) ? '–' : p;
+  $('t-txcount').textContent = (latest.tx_count == null) ? '–' : latest.tx_count;
   $('t-txcount-sub').textContent =
     'sent · rx ' + (latest.rx_count == null ? 0 : latest.rx_count);
   const ok = latest.radio_ok;
   const rh = $('t-radiohealth');
-  rh.textContent = (ok == null) ? '—' : (ok ? '● OK' : '○ FAIL');
+  rh.textContent = (ok == null) ? '–' : (ok ? '● OK' : '○ FAIL');
   rh.className = 'v small-v' + (ok ? ' ok' : (ok === false ? ' crit' : ''));
   $('t-radiohealth-sub').textContent = 'tcxo ' + (latest.radio_tcxo || '?') +
     ' · reinit ' + (latest.radio_reinit == null ? 0 : latest.radio_reinit);
   const up = $('t-uplink');
   if (latest.rx_rssi == null){
-    up.textContent = '—';
+    up.textContent = '–';
     up.className = 'v small-v';
     $('fc-radio-hint').textContent =
-      'FC broadcasts telemetry on cadence (1 Hz on the pad) into the air — no ' +
-      'receiver needed, so Packets TX climbs on its own. RSSI/SNR here are of ' +
+      'FC broadcasts telemetry on cadence (1 Hz on the pad) into the air; no ' +
+      'receiver is needed, so Packets TX climbs on its own. RSSI/SNR here are of ' +
       'uplink commands the FC hears; downlink link quality is measured on the GS.';
   } else {
-    up.textContent = latest.rx_rssi + ' / ' + (latest.rx_snr == null ? '—' : latest.rx_snr);
+    up.textContent = latest.rx_rssi + ' / ' + (latest.rx_snr == null ? '–' : latest.rx_snr);
     up.className = 'v small-v ok';
     $('fc-radio-hint').textContent = '';
   }
@@ -699,7 +700,7 @@ function renderPyro(){
   const tb = $('btn-testen');
   if (srcKind === 'gs'){
     tb.disabled = tb.classList.contains('busy');
-    tb.title = 'UI-local on GS — firmware testen state unknown over radio';
+    tb.title = 'UI-local on GS (the firmware testen state is unknown over radio)';
     tb.textContent = 'Test-enable: ' + (gsTesten ? 'ON (local)' : 'OFF');
     $('testen-why').textContent = '';
   } else if (srcKind === 'fc'){
@@ -713,7 +714,7 @@ function renderPyro(){
   } else {
     tb.disabled = true;
     tb.title = cmdReason('testen') || 'no source';
-    tb.textContent = 'Test-enable: —';
+    tb.textContent = 'Test-enable: –';
     $('testen-why').textContent = tb.title;
   }
 
@@ -730,7 +731,7 @@ function renderPyro(){
 
   const why = fireWhy();
   $('fire-hold').classList.toggle('disabled', !!why);
-  $('fire-why').textContent = why || 'hold 2 s — release aborts';
+  $('fire-why').textContent = why || 'hold 2 s, release aborts';
 }
 
 /* hold-to-fire: pointer-only, 2 s countdown ring, release/leave aborts.
@@ -762,7 +763,7 @@ fireBtn.addEventListener('pointerdown', e => {
   const why = fireWhy();
   if (why){ $('fire-why').textContent = why; return; }
   /* touch pointers get IMPLICIT pointer capture on pointerdown, which
-   * swallows pointerleave — release it so sliding off the pad aborts */
+   * swallows pointerleave; release it so sliding off the pad aborts */
   try { fireBtn.releasePointerCapture(e.pointerId); } catch (_) {}
   holdPt = { x: e.clientX, y: e.clientY };
   holdT0 = performance.now();
@@ -839,11 +840,11 @@ const ARM_HTML =
   '<p>Arming enables the autonomous pyro state machine. The firmware ' +
   'refuses (<span class="mono">arm refused (code)</span>) unless ALL pass:</p>' +
   '<ul>' +
-  '<li><span class="mono">−1</span> — must be in GROUND_IDLE</li>' +
-  '<li><span class="mono">−2</span> — IMU + baro must be healthy</li>' +
-  '<li><span class="mono">−3</span> — gyro cal not done (run cal, keep still ~2 s)</li>' +
-  '<li><span class="mono">−4</span> — moving (|vel| ≥ 2 m/s)</li>' +
-  '<li><span class="mono">−5</span> — tilt/accel implausible (accel_sat or ||a|−1g| ≥ 0.5 g)</li>' +
+  '<li><span class="mono">−1</span>: must be in GROUND_IDLE</li>' +
+  '<li><span class="mono">−2</span>: IMU + baro must be healthy</li>' +
+  '<li><span class="mono">−3</span>: gyro cal not done (run cal, keep still ~2 s)</li>' +
+  '<li><span class="mono">−4</span>: moving (|vel| ≥ 2 m/s)</li>' +
+  '<li><span class="mono">−5</span>: tilt/accel implausible (accel_sat or ||a|−1g| ≥ 0.5 g)</li>' +
   '</ul><p>Disarm stays available on the pad at all times.</p>';
 
 /* ---------- rail wiring ---------- */
@@ -1008,7 +1009,7 @@ function refreshPorts(){
     for (const p of (d.ports || [])){
       const o = document.createElement('option');
       o.value = p.device;
-      o.textContent = p.device + (p.is_fc ? ' — FC' : '') +
+      o.textContent = p.device + (p.is_fc ? ' (FC)' : '') +
                       (p.desc ? ' · ' + p.desc : '');
       sel.appendChild(o);
       if (p.is_fc && !cur) o.selected = true;
@@ -1086,7 +1087,7 @@ function syncUI(){
   gh.style.display = FILT.alpha > 0 ? '' : 'none';  // only meaningful filtered
   const sp = view.span >= 10 ? Math.round(view.span) : Math.round(view.span * 10) / 10;
   $('chart-h').textContent =
-    'Telemetry — last ' + sp + ' s' + (live ? '' : ' (paused)');
+    'Telemetry: last ' + sp + ' s' + (live ? '' : ' (paused)');
 }
 document.querySelectorAll('#seg-span button').forEach(b =>
   b.addEventListener('click', () => setSpan(parseFloat(b.dataset.span))));

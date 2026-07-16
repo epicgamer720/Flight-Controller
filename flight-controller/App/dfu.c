@@ -1,12 +1,12 @@
 /* ============================================================
- * dfu.c — enter the STM32F7 USB DFU bootloader (no SWD on board,
+ * dfu.c: enter the STM32F7 USB DFU bootloader (no SWD on board,
  * CLAUDE.md §5.1). Uses the magic-marker + system-reset pattern:
  * the actual jump happens in SystemInit() with the chip in clean
- * reset state — a direct jump from a running system leaves enough
+ * reset state, since a direct jump from a running system leaves enough
  * peripheral state behind to wedge the ROM's USB enumeration
  * (observed on this board). Marker lives at 0x2003FFF0: the top 16
  * bytes of RAM, reserved by the linker (RAM LENGTH = 256K - 16, so
- * _estack = 0x2003FFF0) — no section or stack can ever reach it,
+ * _estack = 0x2003FFF0), so no section or stack can ever reach it,
  * and RAM is retained across NVIC_SystemReset. Address must match
  * SystemInit() in Core/Src/system_stm32f7xx.c.
  * ============================================================ */

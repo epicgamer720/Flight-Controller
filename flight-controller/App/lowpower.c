@@ -1,16 +1,16 @@
 /* ============================================================
- * lowpower.c — `sleep` console command: safe STOP-mode low power.
+ * lowpower.c: `sleep` console command, safe STOP-mode low power.
  *
  * Why STOP (not STANDBY): STOP retains GPIO state, so the pyro gate
- * (PB13) stays *driven* LOW exactly as the boot sequence left it — the
- * project's #1 rule (CLAUDE.md §2). (The 10K pulldown R28 backs it up
+ * (PB13) stays *driven* LOW exactly as the boot sequence left it, which is
+ * the project's #1 rule (CLAUDE.md §2). (The 10K pulldown R28 backs it up
  * even if the pin ever went high-Z, but we never rely on that alone.)
  * STANDBY would reset the GPIO config → floating gate → forbidden.
  *
  * The IWDG keeps counting in STOP and cannot be stopped once started, so
  * a naive STOP would be reset in ~2.8 s. Instead we STOP in short hops:
  * the RTC (LSE, precise) wakes us every ~2 s, we pet the IWDG, and either
- * re-enter STOP or — when the countdown expires — do a clean reset. A
+ * re-enter STOP or, when the countdown expires, do a clean reset. A
  * reset is the safest possible resume: app_init() re-runs the boot-safe
  * pyro init from scratch. RESET (SW1) wakes it at any time in hardware.
  *
@@ -28,7 +28,7 @@ void RTC_WKUP_IRQHandler(void)
 }
 
 /* Bring up LSE + RTC (once; backup domain persists across the soft reset).
- * LSE start can take ~1-2 s — pet the IWDG around it. */
+ * LSE start can take ~1-2 s, so pet the IWDG around it. */
 static int rtc_setup(void)
 {
     __HAL_RCC_PWR_CLK_ENABLE();

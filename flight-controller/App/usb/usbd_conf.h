@@ -1,5 +1,5 @@
 /* ============================================================
- * usbd_conf.h — USB Device library configuration (OTG_FS, CDC)
+ * usbd_conf.h: USB Device library configuration (OTG_FS, CDC)
  * Flight Controller, STM32F722RET6. Static allocation only.
  * ============================================================ */
 #ifndef __USBD_CONF_H

@@ -1,7 +1,7 @@
-/* audio.js — Flight Deck alert synth. Web Audio oscillators only, no
+/* audio.js: Flight Deck alert synth. Web Audio oscillators only, no
  * external files (fully offline). The AudioContext is created/resumed on
  * the first user gesture (browser autoplay policy); until then every cue
- * is silently skipped. Mute is session-only — never persisted.
+ * is silently skipped. Mute is session-only, never persisted.
  *
  * Cues:
  *   stateChirp   two-tone rising chirp on every flight-state transition
@@ -105,7 +105,7 @@ const DeckAudio = (function(){
     },
 
     /* FAULT alarm: repeats until stopFault() (banner click acknowledges).
-     * Self-rescheduling setTimeout — each beat schedules the next only
+     * Self-rescheduling setTimeout: each beat schedules the next only
      * after it runs, and stopFault() cancels the pending one. */
     startFault(){
       if (faultOn) return;

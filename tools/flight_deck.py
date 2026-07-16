@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flight Deck — offline flight-operations dashboard.
+"""Flight Deck: offline flight-operations dashboard.
 
     py tools/flight_deck.py                          # FC console, auto-port
     py tools/flight_deck.py --source fc --port COM9
@@ -13,7 +13,7 @@ browser instead (also the fallback when WebView2 is missing). All state
 is local: 127.0.0.1 only, no internet.
 
 Clean shutdown (CDC-wedge mitigation): the serial port is closed on
-every exit path — window close, Ctrl+C, SIGTERM, atexit — the FC's USB
+every exit path (window close, Ctrl+C, SIGTERM, atexit) since the FC's USB
 CDC TX can stick if a host process dies holding the port.
 """
 
@@ -70,7 +70,7 @@ def main():
     if args.source == "fc" and port is None:
         port = auto_fc_port()
         if port is None:
-            print("no FC found on USB (VID 0483 PID 5740) — plug it in or"
+            print("no FC found on USB (VID 0483 PID 5740), plug it in or"
                   " pass --port; starting disconnected on COM9 fallback")
             port = "COM9"
     if args.source == "gs" and port is None:

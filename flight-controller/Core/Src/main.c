@@ -1,5 +1,5 @@
 /* ============================================================
- * main.c — Flight Controller (STM32F722RET6)
+ * main.c: Flight Controller (STM32F722RET6)
  * Boot order is safety-critical (CLAUDE.md §2): the pyro gate is
  * forced LOW as the very first action after reset, before HAL,
  * clocks, or any other init.
@@ -245,7 +245,7 @@ static void MX_GPIO_Init(void)
   g.Pin = BQ_CE_PIN;    HAL_GPIO_Init(BQ_CE_PORT, &g);
   g.Pin = LED_PIN;      HAL_GPIO_Init(LED_PORT, &g);
 
-  /* PB2 / RF_SW1: module-internal DIO2 domain — keep high-Z (analog). */
+  /* PB2 / RF_SW1: module-internal DIO2 domain, keep high-Z (analog). */
   g.Mode = GPIO_MODE_ANALOG;
   g.Pull = GPIO_NOPULL;
   g.Pin = LORA_RFSW_PIN; HAL_GPIO_Init(LORA_RFSW_PORT, &g);

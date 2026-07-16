@@ -1,5 +1,5 @@
 /* ============================================================
- * usbd_desc.c — USB device descriptors, FS CDC (VCP) console.
+ * usbd_desc.c: USB device descriptors, FS CDC (VCP) console.
  * VID/PID 0x0483:0x5740 = ST Virtual COM Port (stock host drivers).
  * Serial number derived from the STM32F7 96-bit unique ID.
  * ============================================================ */

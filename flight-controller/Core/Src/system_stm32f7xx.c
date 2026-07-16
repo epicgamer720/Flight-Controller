@@ -152,8 +152,8 @@ void SystemInit(void)
 {
   /* DFU handoff (see App/dfu.c): if the magic marker survived a system
    * reset, jump to the ROM bootloader NOW, while the chip is still in
-   * reset state (clocks HSI, no peripherals touched) — a direct jump from
-   * a running system wedges the ROM's USB init. Runs before .data/.bss
+   * reset state (clocks HSI, no peripherals touched), since a direct jump
+   * from a running system wedges the ROM's USB init. Runs before .data/.bss
    * init, so the marker location must stay outside initialized sections:
    * 0x2003FFF0 is the 16-byte cubby above _estack reserved in the linker
    * script (RAM LENGTH = 256K - 16). Must match App/dfu.c. */

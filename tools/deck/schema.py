@@ -14,7 +14,7 @@ On top of the wire fields every source adds:
     rssi     dBm, nullable (only the GS path measures it)
     snr      dB, nullable
 
-and the FC-console-only extras (all nullable — the GS path never sees
+and the FC-console-only extras (all nullable, since the GS path never sees
 them): press_pa, temp_c, pyro_sense_mv, main_alt_m, testen, log stats,
 radio counters, reset cause, GPS fix age and the per-subsystem health
 booleans from the `status` health line.
@@ -85,7 +85,7 @@ HOST_KEYS = ("t_host", "src", "rssi", "snr")
 LINK_KEYS = ("pkt_rate",)
 
 # FC-console-only extras (nullable everywhere else). Note: mcu_temp_c and
-# main_alt_m are NOT here — both are telemetry fields now (TELEM_KEYS),
+# main_alt_m are NOT here: both are telemetry fields now (TELEM_KEYS),
 # downlinked over radio (the console path still fills them too).
 CONSOLE_KEYS = (
     "press_pa", "temp_c",           # sensors: raw baro
@@ -105,7 +105,7 @@ CONSOLE_KEYS = (
 ALL_KEYS = TELEM_KEYS + HOST_KEYS + LINK_KEYS + CONSOLE_KEYS
 
 # Chart buffers every Source maintains (rows are [t_host, v, ...]).
-# "position" rows are [t, lat_deg, lon_deg, alt_baro_m] — raw lat/lon (the
+# "position" rows are [t, lat_deg, lon_deg, alt_baro_m]: raw lat/lon (the
 # ground-track chart + flight report project to local east/north themselves,
 # and the raw fix is what gets recorded).
 SERIES = ("alt", "vel", "accel", "gyro", "batt", "rssi", "snr", "rate",
@@ -137,7 +137,7 @@ def normalize_telem(d, t_host, src):
 
     latest  the flat "latest values" dict: all input keys + t_host/src,
             with rssi/snr present (None when the frame has none)
-    rows    {chart buffer: row} — each row stamped t_host first
+    rows    {chart buffer: row}, each row stamped t_host first
     """
     latest = dict(d)
     latest["t_host"] = round(t_host, 3)

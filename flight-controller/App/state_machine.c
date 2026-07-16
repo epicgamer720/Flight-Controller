@@ -1,9 +1,9 @@
 /* ============================================================
- * state_machine.c — flight state machine + sensor-fusion glue.
+ * state_machine.c: flight state machine + sensor-fusion glue.
  * SAFETY-CRITICAL (CLAUDE.md §2, §5.4). Every pyro decision is made
  * here and only here; radio commands can never fire in flight.
  *
- * Runs at CTRL_HZ (200 Hz) from app_loop. Superloop context only —
+ * Runs at CTRL_HZ (200 Hz) from app_loop. Superloop context only:
  * nothing here is touched from an ISR, so g_fsm needs no volatile.
  * ============================================================ */
 #include "app.h"
@@ -68,7 +68,7 @@ static void fsm_fault(const char *why)
         return;
     g_fsm.armed = false;            /* safe pyros: pyro_fire ignores !armed */
     datalog_event(why);
-    datalog_flush();                /* bounded drain + sync — FAULT may precede power loss */
+    datalog_flush();                /* bounded drain + sync, since FAULT may precede power loss */
     fsm_set_state(ST_FAULT);        /* logging + telemetry keep running */
 }
 
@@ -320,11 +320,11 @@ void fsm_step(uint32_t now_ms)
     case ST_DROGUE:
         /* Main-deploy point: descending AND AGL <= main_alt_m. This board
          * has NO second pyro channel (single AO3400A on PB13, already
-         * fired at apogee) — so this is an event + log marker only,
+         * fired at apogee), so this is an event + log marker only,
          * no pyro action. Upward velocity inhibits per CLAUDE.md §2. */
         if (g_fsm.vel_ms < 0.0f && g_fsm.agl_m <= g_fsm.main_alt_m) {
             s_main_released = true;      /* servo release: this is the ONLY set site */
-            datalog_event("MAIN RELEASE (servo — no 2nd pyro ch)");
+            datalog_event("MAIN RELEASE (servo, no 2nd pyro ch)");
             fsm_set_state(ST_MAIN);
         }
         break;
@@ -359,7 +359,7 @@ void fsm_step(uint32_t now_ms)
         /* Self-heal a GROUND fault only: if we never launched and both
          * sensors have been healthy again for INIT_OK_N, drop back to INIT
          * (re-runs gyro cal + baro zero). Hard-gated on t_launch_ms==0 so any
-         * IN-FLIGHT fault stays latched — flight never re-enters the ladder. */
+         * IN-FLIGHT fault stays latched: flight never re-enters the ladder. */
         if (g_fsm.t_launch_ms == 0 && g_fsm.imu_ok && g_fsm.baro_ok) {
             if (++s_init_ok_cnt >= INIT_OK_N) {
                 s_init_ok_cnt = 0;
@@ -376,7 +376,7 @@ void fsm_step(uint32_t now_ms)
         break;      /* terminal; telemetry/logging continue from app_loop */
     }
 
-    /* ---- 5. fault-independent backup deploy (CLAUDE.md §2 — anti lawn-dart) ----
+    /* ---- 5. fault-independent backup deploy (CLAUDE.md §2, anti lawn-dart) ----
      * Once launched, if nothing has deployed and the backup time has elapsed,
      * fire the charge REGARDLESS of state or sensor health (bypasses the armed
      * gate via pyro_fire_backup). This is the last line of defence when a

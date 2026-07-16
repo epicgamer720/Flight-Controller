@@ -1,4 +1,4 @@
-/* deck.css — Flight Deck styles.
+/* deck.css: Flight Deck styles.
  *
  * The CSS custom-property token block below (dark :root + light
  * prefers-color-scheme override) is copied VERBATIM from the PAGE string
@@ -37,7 +37,7 @@
  * absent = auto). :root[data-theme] out-specifies the :root blocks above,
  * so these win over prefers-color-scheme in BOTH directions. The light
  * block mirrors the light media tokens; the dark block mirrors the dark
- * :root tokens. Session-only — deck.js never persists the choice. */
+ * :root tokens. Session-only: deck.js never persists the choice. */
 :root[data-theme="light"] {
   --paper:#f4f6f5; --card:#fcfdfc; --ink:#131a18; --ink-2:#55615d; --ink-3:#7e8a85;
   --line:rgba(19,26,24,.12); --line-soft:rgba(19,26,24,.07); --accent:#2b6e8f;
@@ -80,7 +80,7 @@ h1{font-size:20px;font-weight:650;margin:0;letter-spacing:-.01em}
   .recdot.on{animation:pulse 1.2s ease-in-out infinite}
 }
 
-/* LED status dot — mirrors flight-controller/App/status_led.c led_poll() */
+/* LED status dot: mirrors flight-controller/App/status_led.c led_poll() */
 .leddot{width:10px;height:10px;border-radius:50%;background:var(--idle-text);
         box-shadow:0 0 0 2px transparent;transition:background .2s}
 .leddot.rainbow{animation:led-rainbow 3.2s linear infinite}

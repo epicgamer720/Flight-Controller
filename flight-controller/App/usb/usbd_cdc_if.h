@@ -1,5 +1,5 @@
 /* ============================================================
- * usbd_cdc_if.h — CDC class interface (console transport)
+ * usbd_cdc_if.h: CDC class interface (console transport)
  * ============================================================ */
 #ifndef __USBD_CDC_IF_H
 #define __USBD_CDC_IF_H

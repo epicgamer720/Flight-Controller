@@ -1,6 +1,6 @@
 #pragma once
 /* ============================================================
- * app.h — module APIs. Every App/*.c implements against this.
+ * app.h: module APIs. Every App/*.c implements against this.
  * Conventions: all functions non-blocking unless noted; return 0 = OK,
  * negative = error. Superloop calls *_poll() functions; no RTOS.
  * ============================================================ */
@@ -11,7 +11,7 @@
 #include "app_config.h"
 #include "protocol.h"
 
-/* ---------------- spi_bus.c — shared SPI1 arbitration ---------------- */
+/* ---------------- spi_bus.c: shared SPI1 arbitration ---------------- */
 /* Mode 0 for both devices (SX1262 mandates it; ISM330DHCX supports it).
  * Never assert both CS. Superloop = naturally serialized; these guard
  * against nesting bugs and handle CS + BUSY etiquette. */
@@ -21,7 +21,7 @@ int  spi_bus_txrx2(GPIO_TypeDef *cs_port, uint16_t cs_pin,
                    const uint8_t *hdr, uint16_t hdr_len,
                    const uint8_t *tx, uint8_t *rx, uint16_t len); /* hdr then data, one CS */
 
-/* ---------------- ism330dhcx.c — IMU ---------------- */
+/* ---------------- ism330dhcx.c: IMU ---------------- */
 typedef struct { float ax, ay, az;       /* g      */
                  float gx, gy, gz;       /* dps    */
                  bool  accel_sat; } imu_sample_t;
@@ -31,7 +31,7 @@ void imu_gyro_cal_start(void);            /* pad-only stationary bias calibratio
 bool imu_gyro_cal_done(void);
 bool imu_ok(void);
 
-/* ---------------- bmp580.c — barometer ---------------- */
+/* ---------------- bmp580.c: barometer ---------------- */
 int   baro_init(void);                    /* probe 0x46/0x47, continuous mode @ BARO_HZ */
 int   baro_read(float *press_pa, float *temp_c); /* latest conversion */
 float baro_altitude_m(float press_pa);    /* vs sea-level ref */
@@ -39,12 +39,12 @@ void  baro_zero(void);                    /* set current pressure = AGL 0 */
 void  baro_ground_track(void);            /* slow pad-drift absorber (idle only) */
 bool  baro_ok(void);
 
-/* ---------------- bq25883.c — charger monitor ---------------- */
+/* ---------------- bq25883.c: charger monitor ---------------- */
 typedef struct { uint16_t vbat_mv; uint8_t chrg_stat; bool charging; bool fault; } charger_status_t;
 int  charger_init(void);                  /* verify part, enable ADC; monitor-only otherwise */
 int  charger_poll(charger_status_t *st);  /* call at CHARGER_HZ */
 
-/* ---------------- sx126x.c — LoRa radio (Wio-SX1262) ---------------- */
+/* ---------------- sx126x.c: LoRa radio (Wio-SX1262) ---------------- */
 /* Per CLAUDE.md §3.1: BUSY-wait before every command; NRESET pulse on init;
  * DIO2-as-RF-switch ON; TCXO 1.8 V/5 ms via DIO3, auto-fallback to XTAL if
  * init fails; PB2 stays high-Z; params from protocol.h. */
@@ -62,7 +62,7 @@ int  radio_get_tx_power(void);
 int  radio_cw(bool on);                                  /* bench continuous carrier */
 int  radio_last_rx_status(int *rssi_dbm, int *snr_db);   /* last RxDone; <0 = none yet */
 
-/* ---------------- gps.c — external module on USART6 ---------------- */
+/* ---------------- gps.c: external module on USART6 ---------------- */
 typedef struct { int32_t lat_e7, lon_e7, alt_msl_cm;
                  uint8_t sats; bool fix; uint32_t last_fix_ms; } gps_fix_t;
 int  gps_init(void);                      /* autobaud 9600/38400/57600/115200, NMEA GGA/RMC */
@@ -70,7 +70,7 @@ void gps_poll(void);                      /* drain UART ring, parse */
 void gps_get(gps_fix_t *f);
 void gps_uart_irq(void);                  /* USART6 IRQ -> RX ring */
 
-/* ---------------- pyro.c — SAFETY CRITICAL (CLAUDE.md §2) ---------------- */
+/* ---------------- pyro.c: SAFETY CRITICAL (CLAUDE.md §2) ---------------- */
 void pyro_boot_safe(void);                /* FIRST line of main(): gate LOW, push-pull */
 int  pyro_init(void);                     /* ADC for continuity */
 bool pyro_continuity(uint8_t ch);         /* cached from CONT_HZ poll; NEVER pulses gate */
@@ -91,7 +91,7 @@ int  servo_init(void);                    /* TIM2 CH1..4, 50 Hz, centered 1500 u
 void servo_set_us(uint8_t idx, uint16_t us);   /* idx 0..3, clamp 500..2500 */
 uint16_t servo_get_us(uint8_t idx);
 
-/* ---------------- status_led.c — WS2812 on PC13 (best-effort) -------- */
+/* ---------------- status_led.c: WS2812 on PC13 (best-effort) -------- */
 typedef enum {
     LED_BENCH_OFF = 0,   /* normal flight-state pattern (led_poll switch) */
     LED_BENCH_SOLID,     /* fixed r,g,b */
@@ -115,7 +115,7 @@ void led_bench_stop(void);                /* resume the normal flight-state patt
 led_bench_mode_t led_bench_get(void);
 const char *led_bench_name(led_bench_mode_t m);
 
-/* ---------------- kalman.c — 1-D alt/vel filter ---------------- */
+/* ---------------- kalman.c: 1-D alt/vel filter ---------------- */
 typedef struct { float alt_m, vel_ms; float P[2][2]; bool init;
                  uint16_t gate_rejects; /* consecutive gated baro updates */ } kalman_t;
 void kal_reset(kalman_t *k);
@@ -157,7 +157,7 @@ int  telem_cw(uint32_t secs);             /* bench carrier, 0 = stop; auto-off *
 bool telem_cw_active(void);
 int  telem_send_now(void);                /* force one frame; 0 = sent, -1 = busy/down */
 
-/* ---------------- datalog.c — SD binary logging ---------------- */
+/* ---------------- datalog.c: SD binary logging ---------------- */
 /* 68-byte fixed records -> LOGnnn.BIN via FatFs; ring buffer decouples the
  * control loop from SD latency; flush LOG_FLUSH_MS; close on LANDED,
  * flush (bounded drain + sync, files stay open) on FAULT. */
@@ -187,7 +187,7 @@ bool datalog_ok(void);
 void datalog_stats(uint32_t *drops, uint32_t *hw_bytes, uint32_t *cap_bytes);
 void datalog_event(const char *msg);      /* human-readable event -> LOGnnn.TXT sidecar */
 
-/* ---------------- param_store.c — flash param persistence ------------ */
+/* ---------------- param_store.c: flash param persistence ------------ */
 /* Append-record store in flash sector 7 (0x08060000; linker caps code at
  * 384K so overlap is impossible). Persists the tunables below + last GPS for
  * recovery. NEVER persist test_enabled (must boot off, CLAUDE.md §2), gyro
@@ -205,7 +205,7 @@ int  param_save(const params_t *p);       /* ground states only; 0 = saved */
 void fsm_params_snapshot(params_t *p);    /* current tunables + last GPS */
 void fsm_params_apply(const params_t *p); /* sanity-clamped apply to g_fsm */
 
-/* ---------------- console.c — USB-CDC command console ---------------- */
+/* ---------------- console.c: USB-CDC command console ---------------- */
 void console_init(void);
 void console_poll(void);
 void console_rx(const uint8_t *buf, uint32_t len);  /* from usbd_cdc_if */
@@ -219,7 +219,7 @@ bool usb_cdc_connected(void);
 /* ---------------- dfu.c ---------------- */
 void dfu_enter_bootloader(void);          /* deinit + jump 0x1FF00000, no return */
 
-/* ---------------- app_main.c — superloop ---------------- */
+/* ---------------- app_main.c: superloop ---------------- */
 void app_init(void);                      /* module init order + health flags */
 void app_loop(void);                      /* one superloop pass */
 void wdg_refresh(void);                   /* IWDG kick from SD liveness point */

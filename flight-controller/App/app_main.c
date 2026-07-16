@@ -1,5 +1,5 @@
 /* ============================================================
- * app_main.c — module bring-up + bare-metal superloop (CLAUDE.md §5.7).
+ * app_main.c: module bring-up + bare-metal superloop (CLAUDE.md §5.7).
  * Rates: control/log 200 Hz, LED 5 Hz, charger 1 Hz; GPS/console/
  * telemetry/pyro/SD polled every pass (all non-blocking).
  * ============================================================ */
@@ -46,7 +46,7 @@ void app_init(void)
     led_set(8, 8, 8);                    /* dim white: booting */
 
     servo_init();
-    /* Park the main-release servo at SAFE (retained) immediately — servo_init
+    /* Park the main-release servo at SAFE (retained) immediately: servo_init
      * centers all channels (1500 us), which for the release mechanism could be
      * a partial release. Holds SAFE across the whole boot window until fsm_step
      * takes over (state_machine.c drives it every control pass). */
@@ -59,7 +59,7 @@ void app_init(void)
     int rc_gps   = gps_init();
     int rc_sd    = datalog_init();
     telem_init();
-    fsm_init();                          /* zeroes g_fsm — flags set below */
+    fsm_init();                          /* zeroes g_fsm; flags set below */
 
     /* Persisted params (flash sector 7): override the compile-time defaults
      * if a valid record exists. See param_store.c for what must never be
@@ -92,7 +92,7 @@ void app_init(void)
      * spec) / 32 with full reload = ~4.1 s nominal, ~2.8 s worst case.
      * Refreshed once per app_loop() pass AND at the SD liveness point in
      * sd_diskio.c (a healthy-but-slow card can legally hold one FatFs call
-     * for seconds — that is progress, not a hang). */
+     * for seconds, and that is progress, not a hang). */
     s_iwdg.Instance       = IWDG;
     s_iwdg.Init.Prescaler = IWDG_PRESCALER_32;
     s_iwdg.Init.Reload    = 4095u;
@@ -126,7 +126,7 @@ void app_init(void)
     s_next_chg  = now + 1000u;
     s_next_sd   = now + SD_RETRY_PERIOD_MS;
     s_sd_present = datalog_card_present();  /* boot attempt covered this
-                                               insertion — no blind retry */
+                                               insertion, no blind retry */
 }
 
 static void push_log_record(uint32_t now_ms)
@@ -171,7 +171,7 @@ void app_loop(void)
     /* 200 Hz control + logging tick (drift-free; resync if badly late) */
     if ((int32_t)(now - s_next_ctrl) >= 0) {
         if ((int32_t)(now - s_next_ctrl) > 100)
-            s_next_ctrl = now;           /* SD hiccup etc. — resync, don't burst */
+            s_next_ctrl = now;           /* SD hiccup etc: resync, don't burst */
         s_next_ctrl += CTRL_DT_MS;
         fsm_step(now);
         push_log_record(now);
@@ -197,7 +197,7 @@ void app_loop(void)
         charger_poll(&g_fsm.chg);
     }
 
-    /* SD auto-retry: EDGE-TRIGGERED — one attempt per physical card
+    /* SD auto-retry: EDGE-TRIGGERED, one attempt per physical card
      * insertion (remove -> insert observed while running), never a blind
      * timer. A half-seated card can hang HAL_SD_Init past the IWDG
      * budget, and since RAM counters reset with each watchdog reboot, a

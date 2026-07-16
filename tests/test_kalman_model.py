@@ -26,7 +26,7 @@ KAL_GATE_SIGMA = 5.0       # innovation gate: reject y^2 > N^2*S
 KAL_GATE_MAX_REJECT = 25   # ~0.5 s at 50 Hz, then accept (real step)
 
 # ---- kalman.c file-local constants ----
-P_INIT_ALT = 1.0e4         # m^2 — large: state unknown at reset
+P_INIT_ALT = 1.0e4         # m^2 (large, since state is unknown at reset)
 P_INIT_VEL = 1.0e2         # (m/s)^2
 DT_MAX = 0.5               # clamp after loop stalls
 
@@ -94,7 +94,7 @@ class Kalman(object):
         # H = [1 0]; S = p00 + R; K = P H' / S
         r = KAL_R_BARO
         s = p00 + r
-        if s <= 0.0:                       # degenerate — reseed covariance
+        if s <= 0.0:                       # degenerate, reseed covariance
             s = r
         k0 = p00 / s
         k1 = p10 / s
@@ -234,7 +234,7 @@ class TestNanGuard(unittest.TestCase):
         self.assertEqual(k.gate_rejects, rej0)
 
     def test_nan_is_noop(self):
-        # (d) NaN input changes nothing — state, P, reject counter.
+        # (d) NaN input changes nothing: state, P, reject counter.
         self._assert_noop(run_converged(), float("nan"))
 
     def test_inf_is_noop(self):

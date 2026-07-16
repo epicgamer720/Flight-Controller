@@ -1,5 +1,5 @@
 /* ============================================================
- * telemetry.c — LoRa downlink + pad-only command uplink.
+ * telemetry.c: LoRa downlink + pad-only command uplink.
  * Contract (CLAUDE.md §4): downlink-primary at a state-dependent
  * cadence; a short RX window opens ONLY on the pad between TX
  * frames; once in flight the FC is strictly TX-only.
@@ -184,7 +184,7 @@ static int send_packet_type(uint8_t type, uint8_t state_field)
     p.type  = type;
     p.state = state_field;
     p.crc16 = crc16_ccitt((const uint8_t *)&p, sizeof p - 2);
-    s_rx_open = false;   /* radio_send SET_STANDBYs — RX window dies even on failure */
+    s_rx_open = false;   /* radio_send SET_STANDBYs, so the RX window dies even on failure */
     int rc = radio_send((const uint8_t *)&p, sizeof p);
     if (rc == 0) {
         s_tx_pending = true;
@@ -216,7 +216,7 @@ void telem_event(uint8_t event_state)
 }
 
 /* Anti-replay: reject an exact repeat of any of the last NONCE_HIST distinct
- * commands. Deliberately NOT a monotonic "reject <= max" floor — the GS seeds
+ * commands. Deliberately NOT a monotonic "reject <= max" floor, since the GS seeds
  * its nonce from a RANDOM 32-bit value on every restart (gs.ino send_cmd), so
  * a post-restart nonce can legitimately be lower than the last one seen; a
  * floor would permanently lock out a restarted GS. Only filled ring slots are
@@ -274,8 +274,8 @@ static void handle_command(const uint8_t *buf, int len)
     case CMD_SET_MAIN_ALT: {
         float m = (float)c.arg / 100.0f;     /* arg is cm */
         /* Refused while ARMED: deploy params must not change on an armed
-         * vehicle, and the flash persist is state-gated off then anyway —
-         * a RAM-only change ACKed as success would silently revert on
+         * vehicle, and the flash persist is state-gated off then anyway,
+         * so a RAM-only change ACKed as success would silently revert on
          * reboot. NAK also if the ground-state persist itself fails. */
         if (g_fsm.armed || m < 30.0f || m > 2000.0f) {
             ack = false;
@@ -325,7 +325,7 @@ void telem_poll(uint32_t now_ms)
     g_fsm.radio_ok = radio_ok();
     if (!g_fsm.radio_ok) {
         /* Dead radio: retry init periodically so a transient fault (or a
-         * hardware fix) recovers without a reboot. GROUND STATES ONLY —
+         * hardware fix) recovers without a reboot. GROUND STATES ONLY:
          * radio_init() blocks ~250 ms, longer than the 150 ms launch
          * debounce, so it must never run in ST_ARMED or any flight state. */
         if ((g_fsm.state == ST_INIT || g_fsm.state == ST_GROUND_IDLE ||
@@ -334,7 +334,7 @@ void telem_poll(uint32_t now_ms)
             s_last_reinit_ms = now_ms;
             s_reinit_attempts++;
             /* A marginal chip (half-broken joint) can stretch init well
-             * past the nominal ~250 ms — this is deliberate ground-state
+             * past the nominal ~250 ms; this is deliberate ground-state
              * work, not a hang, so keep the IWDG fed around it. */
             wdg_refresh();
             if (radio_init() == 0) {
@@ -377,7 +377,7 @@ void telem_poll(uint32_t now_ms)
         }
     }
 
-    /* Drain any received command (pad only — RX never opens in flight). */
+    /* Drain any received command (pad only; RX never opens in flight). */
     if (s_rx_open) {
         uint8_t buf[64];
         int n = radio_rx_get(buf, sizeof buf);

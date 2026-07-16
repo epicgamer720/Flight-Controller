@@ -1,7 +1,7 @@
 /* ============================================================
- * servo.c — 4x hobby-servo PWM on TIM2 CH1..CH4 (PA0..PA3, AF1).
+ * servo.c: 4x hobby-servo PWM on TIM2 CH1..CH4 (PA0..PA3, AF1).
  * TIM2 pre-configured in main.c: 1 us tick (108 MHz / 108), 20 ms
- * period, PWM1 — CCR value == pulse width in microseconds.
+ * period, PWM1: CCR value == pulse width in microseconds.
  * ============================================================ */
 #include "app.h"
 

@@ -1,12 +1,12 @@
 #pragma once
 /* ============================================================
- * board.h — authoritative hardware map for the Flight Controller
+ * board.h: authoritative hardware map for the Flight Controller
  * Extracted from KiCad netlist (Downloads/fe/Flight controler.kicad_sch,
  * exported 2026-07-07 via kicad-cli). DO NOT invent pins; if it is not
  * here, it is not connected on the board.
  *
  * MCU: STM32F722RET6, LQFP64. HSE 25 MHz (X322525MOB4SI), LSE 32.768 kHz.
- * No SWD (PA13/PA14 unconnected) — debug via USB-CDC, flash via DFU.
+ * No SWD (PA13/PA14 unconnected); debug via USB-CDC, flash via DFU.
  * ============================================================ */
 #include "stm32f7xx_hal.h"
 
@@ -58,9 +58,9 @@
  * Gate: 100R series (R27) + 10K pulldown (R28). Fire = drive HIGH.
  * Continuity: J7.2 -100K(R29)-> PC1 -10K(R30)-> GND divider (ratio 1/11).
  * With e-match fitted and gate OFF, PC1 ~= VBAT/11 (e.g. 8.2V -> ~0.75V).
- * NOTE: schematic label PYRO_CON_1 on PC0 is dangling (unrouted) — unused. */
+ * NOTE: schematic label PYRO_CON_1 on PC0 is dangling (unrouted), unused. */
 #define PYRO1_GATE_PORT    GPIOB
-#define PYRO1_GATE_PIN     GPIO_PIN_13   /* /PYRO_2 net — boot-safe LOW, push-pull */
+#define PYRO1_GATE_PIN     GPIO_PIN_13   /* /PYRO_2 net: boot-safe LOW, push-pull */
 #define PYRO1_SENSE_PORT   GPIOC
 #define PYRO1_SENSE_PIN    GPIO_PIN_1    /* /PYRO_CON_2 = ADC123_IN11 */
 #define PYRO1_SENSE_ADC_CH ADC_CHANNEL_11
@@ -90,7 +90,7 @@
 #define LED_PORT           GPIOC
 #define LED_PIN            GPIO_PIN_13
 
-/* ---- Buttons: SW1 = NRST, SW2 = BOOT0 (10K pulldown R22) — hardware only. */
+/* ---- Buttons: SW1 = NRST, SW2 = BOOT0 (10K pulldown R22); hardware only. */
 
 /* ---- Battery: no MCU ADC divider; read VBAT via BQ25883 internal ADC. ---- */
 

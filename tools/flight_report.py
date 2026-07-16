@@ -340,7 +340,7 @@ def build_html(records, events, title, s):
     }
 
 
-# Inline stylesheet — dark-on-light card layout. No external fonts/URLs so the
+# Inline stylesheet: dark-on-light card layout. No external fonts/URLs so the
 # page is fully self-contained (and passes the "no http://" offline check).
 _CSS = """
 *{box-sizing:border-box}

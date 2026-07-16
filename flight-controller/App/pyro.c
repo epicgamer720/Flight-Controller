@@ -1,11 +1,11 @@
 /* ============================================================
- * pyro.c — SAFETY CRITICAL (CLAUDE.md §2).
+ * pyro.c: SAFETY CRITICAL (CLAUDE.md §2).
  * One channel: gate PB13 (low-side AO3400A), continuity sense
  * PC1 = ADC1_IN11 via 100K/10K divider (ratio 1/11, battery side).
  * Gate boots LOW before any other init (pyro_boot_safe, called as
  * the first line of main()). Firing only via pyro_fire(), gated on
  * g_fsm.armed or pad-test mode. Continuity sensing NEVER pulses
- * the gate — it is a passive ADC read of the divider.
+ * the gate. It is a passive ADC read of the divider.
  *
  * Also hosts mcu_temp_read(): the internal die-temp sensor shares ADC1,
  * so the one module that owns the ADC channel state does the borrow.
@@ -34,7 +34,7 @@ static uint8_t  s_fired_bits;
 static bool     s_deploy_failed;         /* continuity survived fire + retry */
 static uint32_t s_last_adc_ms;
 
-/* ---- boot-safe: runs BEFORE HAL_Init/SystemClock — raw registers only ---- */
+/* ---- boot-safe: runs BEFORE HAL_Init/SystemClock, raw registers only ---- */
 void pyro_boot_safe(void)
 {
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
@@ -95,7 +95,7 @@ void pyro_poll(void)
 {
     uint32_t now = HAL_GetTick();
 
-    /* Continuity ADC at CONT_HZ (passive divider read — never touches gate) */
+    /* Continuity ADC at CONT_HZ (passive divider read; never touches gate) */
     if ((now - s_last_adc_ms) >= CONT_PERIOD_MS) {
         s_last_adc_ms = now;
         uint16_t mv;
@@ -107,7 +107,7 @@ void pyro_poll(void)
 
     /* A deploy pulse aborts early ONLY on a GROUND disarm of a pad test-fire.
      * In flight the sole thing that clears armed is a FAULT (fsm_fault), during
-     * which a deploy pulse MUST run to completion + retry — truncating it on the
+     * which a deploy pulse MUST run to completion + retry. Truncating it on the
      * fault was a lawn-dart hole (the apogee charge could get a partial pulse and
      * the backup was then inhibited by s_deploy_fired). A backup pulse never
      * aborts either. */
@@ -139,7 +139,7 @@ void pyro_poll(void)
                 s_fire_state = PY_FIRING;
             } else {
                 /* Retries exhausted (or inhibited). If continuity is still
-                 * present the charge never went — latch a failed-deploy so
+                 * present the charge never went. Latch a failed-deploy so
                  * telemetry (FLAG_DEPLOY_FAIL) and the log surface it. */
                 if (s_cont[s_fire_ch]) {
                     s_deploy_failed = true;

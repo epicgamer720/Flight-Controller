@@ -1,5 +1,5 @@
 /* ============================================================
- * gps.c — external NMEA GPS on USART6 (PC6=TX, PC7=RX, J8)
+ * gps.c: external NMEA GPS on USART6 (PC6=TX, PC7=RX, J8)
  *
  * RX path: USART6 IRQ (register-level, stm32f7xx_it.c ->
  * gps_uart_irq) pushes bytes into a 512-byte SPSC ring; the
@@ -52,7 +52,7 @@ void gps_uart_irq(void)
             s_head    = n;
         }
     }
-    /* Error flags are NOT cleared by reading RDR on F7 — an uncleared ORE
+    /* Error flags are NOT cleared by reading RDR on F7; an uncleared ORE
      * permanently gates further RXNE events and hangs RX. Always clear. */
     if (USART6->ISR & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE | USART_ISR_PE))
         USART6->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NCF | USART_ICR_PECF;
@@ -74,7 +74,7 @@ static uint32_t dec_u(const char *s)      /* unsigned decimal; stops at non-digi
     return v;
 }
 
-/* "$xxYYY,...*hh" — XOR of bytes between '$' and '*' must equal hh,
+/* "$xxYYY,...*hh": XOR of bytes between '$' and '*' must equal hh,
  * and the two hex digits must be the last chars of the line. */
 static bool nmea_checksum_ok(const char *l, uint16_t n)
 {

@@ -1,4 +1,4 @@
-"""deck — Flight Deck (offline flight-operations dashboard) package.
+"""deck: Flight Deck (offline flight-operations dashboard) package.
 
 P1 contents:
     schema.py   canonical telemetry model = telem_decode.parse_telem keys

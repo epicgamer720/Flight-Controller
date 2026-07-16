@@ -1,8 +1,8 @@
 /* ============================================================
- * stm32f7xx_it.c — interrupt handlers, Flight Controller board rev.
+ * stm32f7xx_it.c: interrupt handlers, Flight Controller board rev.
  * ISRs are minimal (flag/ring work only, never blocking).
  * SAFETY (CLAUDE.md §2): every fault/NMI path forces the pyro gate
- * LOW with a direct BSRR write before hanging — no HAL dependency.
+ * LOW with a direct BSRR write before hanging, with no HAL dependency.
  * ============================================================ */
 #include "main.h"
 #include "stm32f7xx_it.h"
@@ -80,7 +80,7 @@ void SysTick_Handler(void)
 /* STM32F7xx Peripheral Interrupt Handlers                                    */
 /******************************************************************************/
 
-/* LoRa DIO1 (PA10, rising edge) — SX1262 TxDone/RxDone/Timeout. */
+/* LoRa DIO1 (PA10, rising edge): SX1262 TxDone/RxDone/Timeout. */
 void EXTI15_10_IRQHandler(void)
 {
   if (__HAL_GPIO_EXTI_GET_IT(LORA_IRQ_PIN) != 0U)

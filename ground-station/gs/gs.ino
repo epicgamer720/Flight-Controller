@@ -1,19 +1,19 @@
 /* ============================================================
- * gs.ino — Ground Station skeleton (RP2040 + SX1262 via RadioLib)
+ * gs.ino: Ground Station skeleton (RP2040 + SX1262 via RadioLib)
  *
  * Role (CLAUDE.md §6): IRQ-driven continuous RX of FC telemetry,
  * validate magic/version/CRC16, emit one line of JSON per packet on
  * USB-CDC Serial (field names match tools/telem_decode.py
  * parse_telem(), plus "rssi"/"snr"). Operator commands typed on the
  * same serial port are built into command_packet_t and transmitted
- * once; pad-only enforcement stays FC-side — the GS just sends.
+ * once; pad-only enforcement stays FC-side, the GS just sends.
  *
  * COMPILE-ONLY SKELETON: gs_pins.h pins are -1 sentinels until the
  * GS KiCad schematic is parsed (CLAUDE.md §0). The sketch compiles
  * with a #warning and refuses to run until they are filled in.
  *
  * Toolchain: Arduino-Pico (Earle Philhower core) + RadioLib.
- * Link params + packet structs come from shared/protocol.h — build
+ * Link params + packet structs come from shared/protocol.h; build
  * with -I<repo>/shared (see ground-station/README.md for the exact
  * arduino-cli command and its space-in-path quoting).
  * ============================================================ */
@@ -27,7 +27,7 @@
 #include <ctype.h>
 
 #include "gs_pins.h"
-#include "protocol.h"   /* shared/ — also pulls in crc16.h */
+#include "protocol.h"   /* shared/, also pulls in crc16.h */
 
 /* Wire-format guards: both MCUs are little-endian ARM; the packed
  * structs must be byte-for-byte what telem_decode.py expects. */
@@ -86,7 +86,7 @@ void setup()
 
     /* Runtime refusal: never touch the radio with sentinel pins.
      * (Constant condition today; becomes dead code once gs_pins.h is
-     * filled in — the radio path below still compiles either way.) */
+     * filled in; the radio path below still compiles either way.) */
     if (!GS_PINS_VALID) {
         for (;;) {
             Serial.println("{\"error\":\"gs_pins.h pin map not set - extract "
@@ -118,7 +118,7 @@ void radio_bringup(void)
             st = radio.setTCXO(LORA_TCXO_V, (uint32_t)LORA_TCXO_DELAYMS * 1000UL);
 #else
         /* Plain 32 MHz XTAL: tcxoVoltage = 0 keeps DIO3 TCXO control
-         * OFF — enabling it on an XTAL part kills radio init (§3.1). */
+         * OFF, since enabling it on an XTAL part kills radio init (§3.1). */
         st = radio.begin((float)LORA_FREQ_HZ / 1.0e6f, LORA_BW_KHZ, LORA_SF,
                          LORA_CR, LORA_SYNC_WORD, LORA_TX_DBM, LORA_PREAMBLE,
                          0.0f);
@@ -126,7 +126,7 @@ void radio_bringup(void)
         /* DIO2 drives the PE4259 RF switch on this board (§3.1/§6.3). */
         if (st == RADIOLIB_ERR_NONE)
             st = radio.setDio2AsRfSwitch(true);
-        /* LoRa HW CRC ON (§3) — on top of the payload CRC16. */
+        /* LoRa HW CRC ON (§3), on top of the payload CRC16. */
         if (st == RADIOLIB_ERR_NONE)
             st = radio.setCRC(2);
         if (st == RADIOLIB_ERR_NONE) {
@@ -179,7 +179,7 @@ void service_radio_rx(void)
 }
 
 /* Validate + dispatch one received frame.
- * 48 B = telem_packet_t (PKT_TELEMETRY / PKT_EVENT / PKT_ACK — the FC
+ * 48 B = telem_packet_t (PKT_TELEMETRY / PKT_EVENT / PKT_ACK; the FC
  * sends ACKs as full telemetry-shaped frames with type = PKT_ACK).
  * 14 B = command_packet_t (only seen if we hear our own uplink echoed). */
 void emit_packet(const uint8_t *buf, size_t len, float rssi, float snr)
@@ -427,7 +427,7 @@ void send_cmd(uint8_t cmd, uint32_t arg)
      * opens a short pad RX window between its frames (§4), and its ACK
      * arrives as a PKT_ACK telemetry-shaped frame. */
     int16_t st = radio.transmit((uint8_t *)&c, sizeof c);
-    s_rx_flag = false;              /* TxDone also pulses DIO1 — discard */
+    s_rx_flag = false;              /* TxDone also pulses DIO1, discard it */
     radio.startReceive();
 
     char js[160];

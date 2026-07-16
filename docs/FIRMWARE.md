@@ -1,17 +1,17 @@
-# Rocketry Avionics — bench quickstart
+# Rocketry Avionics: bench quickstart
 
 Flight controller firmware for an **STM32F722RET6** board (`flight-controller/`) plus a
 planned **RP2040 ground station**, linked over **915 MHz LoRa** (SX1262 on both ends).
 `shared/protocol.h` is the wire contract for both boards; `CLAUDE.md` has the full
 design context and safety rules; `docs/PINMAP.md` is the authoritative pin map.
 
-> **Status:** SIL/host-tested, builds clean, and flashed + bench-verified on hardware —
-> **not yet flight-tested.** Flight thresholds in `App/app_config.h` are still defaults;
+> **Status:** SIL/host-tested, builds clean, and flashed + bench-verified on hardware,
+> but **not yet flight-tested.** Flight thresholds in `App/app_config.h` are still defaults;
 > tune them (and the mount knobs flagged below) to the motor/airframe before flying.
 
 ## Build
 
-No SWD on this board — everything goes through USB (CDC console + DFU flashing).
+No SWD on this board, so everything goes through USB (CDC console + DFU flashing).
 
 ```
 cd flight-controller
@@ -33,7 +33,7 @@ dfu-util -a 0 -d 0483:df11 -s 0x08000000:leave -D build/fc.bin
 
 If dfu-util says **"cannot open"**: unplug USB and replug it *while holding BOOT*.
 (`STM32_Programmer_CLI -c port=usb1 -w build\fc.bin 0x08000000 -v -g 0x08000000`
-works too — see `docs/PINMAP.md`.)
+works too; see `docs/PINMAP.md`.)
 
 ## Console commands
 
@@ -44,7 +44,7 @@ works too — see `docs/PINMAP.md`.)
 |---|---|
 | `help` | command list |
 | `status` | state / armed / alt / vel / batt / **MCU die-temp** / flags / health / pyro |
-| `preflight` | GO/NO-GO checklist before arming (read-only — nothing is pulsed) |
+| `preflight` | GO/NO-GO checklist before arming (read-only, nothing is pulsed) |
 | `sensors` | raw IMU + baro |
 | `gps` | last GPS fix + persisted last-landing fix |
 | `servo <1-4> <500-2500>` | set servo pulse (µs) |
@@ -52,10 +52,10 @@ works too — see `docs/PINMAP.md`.)
 | `testen <on\|off>` | pad test mode (GROUND_IDLE only; always boots **off**) |
 | `fire <ch> <hex-code>` | pad test fire (testen + passcode gated) |
 | `zero` | zero baro AGL |
-| `mainalt <m>` | set main deploy altitude — persisted to flash |
-| `apogee <ms>` | set apogee / backup-deploy timer (per-motor) — persisted to flash |
+| `mainalt <m>` | set main deploy altitude (persisted to flash) |
+| `apogee <ms>` | set apogee / backup-deploy timer (per-motor); persisted to flash |
 | `log <stat\|start\|stop>` | SD logging (stat shows drops + ring high-water) |
-| `cal` | pad gyro bias cal (~2 s, keep still — rejected if it moves) |
+| `cal` | pad gyro bias cal (~2 s, keep still; rejected if it moves) |
 | `radio` | radio health + re-init / TX-timeout counters |
 | `radiodbg` | raw SX1262 hardware probe (BUSY/reset/SPI bytes) |
 | `tx [power\|mon\|cw\|frame]` | TX dashboard; set power / packet monitor / bench CW / force a frame |
@@ -63,7 +63,7 @@ works too — see `docs/PINMAP.md`.)
 | `charge` | BQ25883 charger status |
 | `bootloader` | reboot into USB DFU |
 | `reboot` | reset MCU |
-| `wdtest` | deliberate hang — IWDG must reset the board in ~4 s |
+| `wdtest` | deliberate hang; IWDG must reset the board in ~4 s |
 | `sleep [s]` | STOP-mode low power (ground + disarmed); wakes on RTC timer or RESET; 0/none = until RESET |
 
 ## Tools (`tools/`)
@@ -72,16 +72,16 @@ works too — see `docs/PINMAP.md`.)
 
 | Tool | Use |
 |---|---|
-| `py tools/flight_deck.py` | **Flight Deck** — the flight-ops dashboard (see below) |
+| `py tools/flight_deck.py` | **Flight Deck**, the flight-ops dashboard (see below) |
 | `py tools/serial_monitor.py` | timestamped console; auto-detects the FC COM port (`--list`, `--port COM7`) |
-| `py tools/live_dashboard.py [--port COM9] [--http 8321]` | simple bring-up charts at http://localhost:8321. **Owns the COM port while running** — stop it before serial_monitor or flashing |
+| `py tools/live_dashboard.py [--port COM9] [--http 8321]` | simple bring-up charts at http://localhost:8321. **Owns the COM port while running**, so stop it before serial_monitor or flashing |
 | `py tools/decode_log.py LOG001.BIN [out.csv]` | SD binary log → CSV (68-B records, CRC-checked, resyncs past corruption) |
 | `py tools/telem_decode.py <hex>` | parse/build LoRa packets from `shared/protocol.h`; importable by the GS bridge |
 
 ## Flight Deck (`tools/flight_deck.py`)
 
 Offline mission-control app in a native window (pywebview/WebView2; `--browser`
-falls back to the default browser). Fully local — 127.0.0.1 only.
+falls back to the default browser). Fully local: 127.0.0.1 only.
 
 ```
 py tools/flight_deck.py                          # FC over USB, auto-detects the port
@@ -99,12 +99,12 @@ py tools/flight_deck.py --source replay --replay recordings/deck_.../raw.jsonl
 - **Commands** are interlocked in the UI *and* re-checked by the firmware (the
   firmware is always the real gate): arm/disarm confirmations, mainalt bounded
   30–2000 m (the radio path's stricter bound), test-fire behind test-enable →
-  passcode (never stored, never logged — masked even in recordings) → 2 s
+  passcode (never stored, never logged; masked even in recordings) → 2 s
   hold-to-fire. In flight the FC is TX-only, so every command control disables
   itself with the reason shown.
 - **Recording**: each live session writes `recordings/deck_<stamp>/telem.csv` +
   `events.csv` (+ lossless `raw.jsonl` on GS sessions); replay any of them with
-  `--source replay --replay <file>`. FC sessions are poll-rate on the ground —
+  `--source replay --replay <file>`. FC sessions are poll-rate on the ground;
   the FC's own 200 Hz SD log remains the authoritative flight record.
 - **Owns its COM port** while running (like live_dashboard). It closes the port
   on every exit path; if a hard-killed host process ever wedges the FC's USB
@@ -130,15 +130,15 @@ STM32_Programmer_CLI -c port=usb1 -ob BOR_LEV=0      # 0b00 = BOR Level 3 ≈ 2.
 ```
 
 Sets brown-out reset to ~2.7 V. **The F7 encoding is inverted-looking** (RM0431,
-FLASH_OPTCR bits 3:2): value **0 = Level 3 (~2.7 V)** … value **3 = BOR off** —
+FLASH_OPTCR bits 3:2): value **0 = Level 3 (~2.7 V)** … value **3 = BOR off**,
 which is also the shipping default, so a fresh chip displays `BOR_LEV: 0x3`.
 Without it, a battery sag or pyro-fire droop can leave the F7 running erratically
 (corrupting flash/SD writes) instead of resetting cleanly. Option bytes live
-outside program flash, so this survives reflashing — do it once per board.
+outside program flash, so this survives reflashing; do it once per board.
 
 ## Safety & flight logic
 
-Every pyro decision is made in `App/state_machine.c` and only there — radio commands can
+Every pyro decision is made in `App/state_machine.c` and only there: radio commands can
 never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are defaults.
 
 - **Arming gate** (`fsm_request_arm`) requires *all* of: `ST_GROUND_IDLE`, IMU + baro
@@ -146,14 +146,14 @@ never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are 
   **battery ≥ `ARM_MIN_VBAT_MV` (7.0 V)**, and **vertical orientation**. On refusal it
   returns a code the console prints in English: `-1` not idle, `-2` imu/baro, `-3` gyro
   cal, `-4` moving, `-5` accel implausible, `-6` no pyro continuity, `-7` battery low,
-  `-8` not vertical. Orientation keys off `ARM_UP_AXIS`/`ARM_UP_SIGN` (default +Z — a
+  `-8` not vertical. Orientation keys off `ARM_UP_AXIS`/`ARM_UP_SIGN` (default +Z, a
   **mount knob**); a wrong axis safely *refuses* with `-8`, it never misfires. `preflight`
   shows the same checks as a GO/NO-GO list without arming.
 - **Fault-independent backup deploy**: once launched, the single charge fires at
-  `apogee_timeout_ms` after launch **even in `ST_FAULT`** with dead sensors — it bypasses
+  `apogee_timeout_ms` after launch **even in `ST_FAULT`** with dead sensors: it bypasses
   the armed gate through one controlled path (`pyro_fire_backup`). Fires at most once,
   never on the pad and never after landing; a deploy pulse is aborted **only** by a ground
-  disarm, never truncated by an in-flight fault. This is the anti-lawn-dart last line — set
+  disarm, never truncated by an in-flight fault. This is the anti-lawn-dart last line; set
   `apogee` to just past expected apogee per motor (clamped to `[MAX_BURN_MS, 120000]` so it
   can't fire under thrust).
 - **Servo main-release** (this board has one pyro channel, fired at apogee; a servo releases
@@ -167,8 +167,8 @@ never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are 
   latched at `zero`).
 - **Fault handling**: a *ground* fault (never launched) self-heals back to `ST_INIT` once
   both sensors read healthy again (re-runs gyro cal + baro zero); any *in-flight* fault
-  latches — logging + telemetry keep running, pyros safe, the backup timer still armed.
-- **Anti-replay**: 32-deep nonce dedup ring with **no** monotonic floor — the GS reseeds its
+  latches: logging + telemetry keep running, pyros safe, the backup timer still armed.
+- **Anti-replay**: 32-deep nonce dedup ring with **no** monotonic floor. The GS reseeds its
   nonce randomly on restart, so a floor would permanently lock out a restarted GS.
 
 ## Firmware notes
@@ -181,7 +181,7 @@ never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are 
   and the last landing GPS fix (recovery aid). Migrates cleanly from the old 16-byte v1
   (mismatched records are skipped, then appended past). Code flash is capped at **384 KB**
   in the linker so an oversized image fails at link instead of clobbering the store.
-  **Never persisted** by design: `testen` (boots off), gyro bias, baro zero — all re-done
+  **Never persisted** by design: `testen` (boots off), gyro bias, baro zero; all re-done
   each pad session.
 - **Telemetry is protocol v3** (`PROTO_VERSION 3`, 54-byte `telem_packet_t` in
   `shared/protocol.h`): per-frame `seq` (host computes packet-delivery ratio), a last-event
@@ -194,7 +194,7 @@ never fire in flight (CLAUDE.md §2). Not flight-tested yet; the thresholds are 
 - `log start` failure codes: `-1` no card, `-2` link, `-3` mount, `-4` scan,
   `-5` slots, `-6`/`-7` open.
 
-## Status LED legend (WS2812 on PC13 — needs the 5 V rail)
+## Status LED legend (WS2812 on PC13, needs the 5 V rail)
 
 | State | Color |
 |---|---|
@@ -218,4 +218,4 @@ and `led effect rainbow [period_ms]` run a bench-only pattern; `led auto`
 / `led effect off` resumes the real flight-state pattern. Arming
 force-clears any active test/effect so it can never mask the ARMED
 indicator. Flight Deck (`tools/flight_deck.py`) exposes all of these as
-a "Status LED — bench" panel when connected over USB.
+a Status LED bench panel when connected over USB.

@@ -1,5 +1,5 @@
 /* ============================================================
- * bq25883.c — TI BQ25883 2-cell boost charger, I2C1, 7-bit 0x6B.
+ * bq25883.c: TI BQ25883 2-cell boost charger, I2C1, 7-bit 0x6B.
  * Monitor-only: never touches charge current/voltage limits.
  * Register map from BQ2588x datasheet knowledge (see notes):
  *   0x0B Charger Status 1  (CHRG_STAT[2:0])
@@ -50,7 +50,7 @@ int charger_init(void)
     s_pn_ok = (((pi >> 3) & 0x0Fu) == BQ_PN_EXPECTED); /* tolerate mismatch, don't brick */
 
     /* Enable internal ADC, continuous conversion. Everything else stays at
-     * chip defaults — monitor-only per CLAUDE.md §5.6. */
+     * chip defaults; monitor-only per CLAUDE.md §5.6. */
     if (bq_wr(BQ_REG_ADC_CTRL, BQ_ADC_EN) != 0)
         return -2;
     return 0;
@@ -84,7 +84,7 @@ int charger_poll(charger_status_t *st)
     }
 
     /* The chip's I2C watchdog (default 40 s) resets registers to defaults,
-     * which clears ADC_EN — re-assert it every poll (1 Hz, cheap). */
+     * which clears ADC_EN, so re-assert it every poll (1 Hz, cheap). */
     if (bq_wr(BQ_REG_ADC_CTRL, BQ_ADC_EN) != 0)
         err = -1;
 

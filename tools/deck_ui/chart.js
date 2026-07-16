@@ -1,9 +1,9 @@
-/* chart.js — Flight Deck canvas chart engine.
+/* chart.js: Flight Deck canvas chart engine.
  *
  * PROVENANCE: the CanvasChart class and its helpers (view state, latestT /
  * viewT1 / clampEnd / goLive / togglePause / setSpan, lowerBound, strokePts
  * min/max decimation, crosshair tooltip, EMA display filter, loadTheme) are
- * COPIED from the PAGE string in tools/live_dashboard.py (read-only donor —
+ * COPIED from the PAGE string in tools/live_dashboard.py (read-only donor,
  * the bring-up tool stays byte-identical) and DIVERGE here for flight ops:
  *   - a named buffer registry (deck.js fills buffers[..]; the old single
  *     `buf` global is gone)
@@ -13,7 +13,7 @@
  *     axis, labels collision-stepped vertically
  *   - flight-window auto-zoom (launch_t_host − 5 s → now)
  *   - StateTimeline: a labeled per-state-visit band on the same time axis
- *     (state chip palette — status colors encode STATE here, never series)
+ *     (state chip palette: status colors encode STATE here, never series)
  */
 'use strict';
 
@@ -27,7 +27,7 @@ function loadTheme(){
     grid: g('--grid'), axis: g('--axis'),
     ink: g('--ink'), ink2: g('--ink-2'), ink3: g('--ink-3'),
     card: g('--card'), line: g('--line'),
-    tone: {   /* state chip palette (timeline band only — never series) */
+    tone: {   /* state chip palette (timeline band only, never series) */
       idle:   { fill: g('--idle-wash'), edge: g('--idle-text') },
       good:   { fill: g('--good-wash'), edge: g('--good-text') },
       warn:   { fill: g('--warn-wash'), edge: g('--warn-text') },
@@ -52,8 +52,8 @@ function resetBuffers(){
 }
 
 /* ---------- flight-ops shared data (deck.js maintains, engine renders) ---------- */
-const eventMarks = [];   // {t, label} — labeled ticks on every chart
-const stateSegs = [];    // {t0, t1|null, st, name, tone} — timeline band
+const eventMarks = [];   // {t, label}: labeled ticks on every chart
+const stateSegs = [];    // {t0, t1|null, st, name, tone}: timeline band
 let launchT = null;      // tplus.launch_t_host, or null before launch
 
 /* ---------- shared time-axis view state (all charts + timeline) ---------- */
@@ -61,7 +61,7 @@ const view = { span: 30, end: null };   // end === null -> follow live
 const FILT = { alpha: 0, ghost: true }; // EMA display filter; 0 = off.
                                         // ghost: raw data drawn faintly
                                         // under the filtered trace
-let refApogee = null;    // peaks.apogee_m from /data — apogee ref line
+let refApogee = null;    // peaks.apogee_m from /data: apogee ref line
 let dataNow = 0;                        // newest time reported by the server
 let lastT = -1;                         // newest sample time ingested
 const charts = [];
@@ -113,7 +113,7 @@ function xStep(span){
   return 60;
 }
 function fmtOff(t, t1, liveEdge){  // axis label: offset of t from the view's right edge
-  const v = t - t1;                // (stable while paused — never tied to the wall clock)
+  const v = t - t1;                // (stable while paused, never tied to the wall clock)
   if (v > -0.05) return liveEdge ? 'now' : '0s';
   return (Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v) : v.toFixed(1)) + 's';
 }
@@ -313,7 +313,7 @@ class CanvasChart {
     ctx.strokeStyle = THEME.axis;
     ctx.beginPath(); ctx.moveTo(L, T + ph); ctx.lineTo(w - R, T + ph); ctx.stroke();
 
-    /* apogee reference line (Altitude chart only): dashed, ink-toned —
+    /* apogee reference line (Altitude chart only): dashed, ink-toned;
      * a reference, not a status; skipped below 5 m (bench noise) */
     if (o.apogeeRef && refApogee !== null && refApogee >= 5){
       const y = Y(refApogee);
@@ -367,7 +367,7 @@ class CanvasChart {
         anyStroke = strokePts(ctx, raw, X, Y, t0, span, pw) || anyStroke;
       }
     }
-    /* end dots on the newest visible non-null sample per series — on the
+    /* end dots on the newest visible non-null sample per series: on the
      * FILTERED line when the display filter is active */
     if (nVis > 0){
       for (let s = 0; s < o.cols.length; s++){
@@ -481,7 +481,7 @@ class CanvasChart {
     for (let s = 0; s < o.cols.length; s++){
       const v = r[o.cols[s]];
       if (v === null || v === undefined){
-        lines.push((o.names[s] ? o.names[s] + ' ' : '') + '—');
+        lines.push((o.names[s] ? o.names[s] + ' ' : '') + '–');
       } else if (filt && filt[s] !== null){
         lines.push((o.names[s] ? o.names[s] + ' ' : '') +
                    filt[s].toFixed(o.dec) +
@@ -519,7 +519,7 @@ class CanvasChart {
 
 /* ---------- state timeline band: one labeled segment per state visit ----------
  * Shares the chart time axis (same l/r margins). Status colors ARE allowed
- * here — the band encodes flight STATE, not a data series. */
+ * here, since the band encodes flight STATE, not a data series. */
 class StateTimeline {
   constructor(boxId){
     this.box = document.getElementById(boxId);
@@ -619,7 +619,7 @@ class GroundTrack {
     return m.toFixed(1) + ' m';
   }
 
-  /* bg (optional) = { img: <loaded HTMLImageElement>, halfM: <ground m> } —
+  /* bg (optional) = { img: <loaded HTMLImageElement>, halfM: <ground m> }:
    * a north-up satellite tile covering ±halfM ground metres around the pad
    * (points[0] == ground 0,0 == image centre). When present and loaded, the
    * view LOCKS to ±halfM (no auto-fit) and the tile is drawn under the track.
@@ -746,7 +746,7 @@ class GroundTrack {
     ctx.strokeStyle = THEME.axis; ctx.lineWidth = 1;
     ctx.strokeRect(left + 0.5, top + 0.5, plotW - 1, plotH - 1);
 
-    /* N arrow (top-right) — orientation hint */
+    /* N arrow (top-right): orientation hint */
     const ax = right - 12, a0 = top + 12, a1 = top + 30;
     ctx.strokeStyle = THEME.ink3; ctx.fillStyle = THEME.ink3; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(ax, a1); ctx.lineTo(ax, a0); ctx.stroke();

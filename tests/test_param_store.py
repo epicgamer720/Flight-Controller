@@ -76,7 +76,7 @@ class ParamSlot(unittest.TestCase):
         self.assertIsNone(slot_valid(bytes(s)))
 
     def test_v1_record_rejected(self):
-        # a v1 firmware wrote ver=1 — must be ignored after the bump
+        # a v1 firmware wrote ver=1, which must be ignored after the bump
         s = pack_slot(15000, 30000, 0, 0, 1, ver=1)
         self.assertIsNone(slot_valid(s))
 

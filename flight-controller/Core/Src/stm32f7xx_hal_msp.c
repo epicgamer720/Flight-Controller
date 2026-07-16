@@ -1,6 +1,6 @@
 /* ============================================================
- * stm32f7xx_hal_msp.c — MSP init/deinit for the FC board rev.
- * Pin assignments come from board.h (KiCad netlist) — do not invent.
+ * stm32f7xx_hal_msp.c: MSP init/deinit for the FC board rev.
+ * Pin assignments come from board.h (KiCad netlist); do not invent.
  * NOTE: HAL_PCD_MspInit lives in App/usb/usbd_conf.c, not here.
  * ============================================================ */
 #include "main.h"
@@ -16,7 +16,7 @@ void HAL_MspInit(void)
 }
 
 /* ---------------- SPI1: shared IMU (CS PA4) + LoRa (CS PA9) ----------------
- * PA4 is a plain GPIO chip-select configured in main.c — NOT AF here. */
+ * PA4 is a plain GPIO chip-select configured in main.c, not AF here. */
 void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 {
   GPIO_InitTypeDef g = {0};
@@ -50,7 +50,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
   RCC_PeriphCLKInitTypeDef pclk = {0};
   if (hi2c->Instance == I2C1)
   {
-    /* Kernel clock = PCLK1 (54 MHz) — matches Timing in main.c. */
+    /* Kernel clock = PCLK1 (54 MHz), matches Timing in main.c. */
     pclk.PeriphClockSelection = RCC_PERIPHCLK_I2C1;
     pclk.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
     if (HAL_RCCEx_PeriphCLKConfig(&pclk) != HAL_OK)
@@ -164,7 +164,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc)
   {
     __HAL_RCC_ADC1_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
-    /* PC1 analog — also set in main.c MX_GPIO_Init; harmless repeat. */
+    /* PC1 analog, also set in main.c MX_GPIO_Init; harmless repeat. */
     g.Pin = PYRO1_SENSE_PIN;
     g.Mode = GPIO_MODE_ANALOG;
     g.Pull = GPIO_NOPULL;

@@ -1,5 +1,5 @@
 /* ============================================================
- * usbd_desc.h — USB device descriptors (FS CDC console)
+ * usbd_desc.h: USB device descriptors (FS CDC console)
  * ============================================================ */
 #ifndef __USBD_DESC_H
 #define __USBD_DESC_H

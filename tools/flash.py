@@ -44,7 +44,7 @@ def run(cmd, **kw):
 def build():
     rc = run([MAKE, "-j", "GCC_PATH=" + GCC_PATH], cwd=os.path.join(REPO_ROOT, "flight-controller"))
     if rc != 0:
-        sys.exit("build failed (make rc=%d) — not flashing." % rc)
+        sys.exit("build failed (make rc=%d), not flashing." % rc)
 
 
 def trigger_bootloader(port):
@@ -73,7 +73,7 @@ def wait_for_dfu(dfu_util, tries=8):
             out = subprocess.run([dfu_util, "-l"], capture_output=True,
                                  text=True).stdout
         except FileNotFoundError:
-            sys.exit("dfu-util not found at %s — pass --dfu-util." % dfu_util)
+            sys.exit("dfu-util not found at %s, pass --dfu-util." % dfu_util)
         if DFU_ID in out:
             print("DFU device %s present." % DFU_ID)
             return
@@ -120,7 +120,7 @@ def main():
               "-s", "0x08000000:leave", "-D", binpath])
     if rc != 0:
         sys.exit("dfu-util failed (rc=%d).\n%s" % (rc, CANNOT_OPEN_TIP))
-    print("done — FC left DFU and reset into the new firmware.")
+    print("done. FC left DFU and reset into the new firmware.")
 
 
 if __name__ == "__main__":

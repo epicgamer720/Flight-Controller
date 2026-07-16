@@ -1,8 +1,8 @@
 /* ============================================================
- * sd_diskio.c — FatFs Diskio_drvTypeDef backed by polled HAL_SD
+ * sd_diskio.c: FatFs Diskio_drvTypeDef backed by polled HAL_SD
  * on SDMMC1 (hsd1). No DMA: CPU-driven FIFO transfers, so no
  * D-cache coherency concerns (only I-cache is enabled anyway).
- * All waits are bounded by HAL_GetTick timeouts — never blocks
+ * All waits are bounded by HAL_GetTick timeouts, so it never blocks
  * the superloop indefinitely.
  * ============================================================ */
 #include "app.h"

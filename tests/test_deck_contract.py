@@ -6,8 +6,8 @@ Three directions:
      and \r\n included).  Every regex tools/deck/sources.py uses to scrape
      the FC console must match them.
   2. console.c / app_main.c are scanned for the anchor substrings deck
-     depends on (markers, format fragments, the boot banner) — same
-     pattern as tests/test_console_contract.py.
+     depends on (markers, format fragments, the boot banner), following the
+     same pattern as tests/test_console_contract.py.
   3. gs.ino is scanned for the JSON field names LineIngest expects, and
      sources.gs_json_line's key order is locked to parse_telem's.
 """
@@ -37,7 +37,7 @@ with open(GS_INO, encoding="utf-8") as f:
     GS_SRC = f.read()
 
 # ---------------------------------------------------------------------------
-# Sample replies — verbatim console.c printf shapes with values filled in.
+# Sample replies: verbatim console.c printf shapes with values filled in.
 # ---------------------------------------------------------------------------
 STATUS_REPLY = (
     "state:   GROUND_IDLE  t=123456ms\r\n"

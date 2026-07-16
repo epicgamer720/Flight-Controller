@@ -1,7 +1,7 @@
 /* ============================================================
- * status_led.c — single WS2812B-2020, data-in on PC13 via 100R.
+ * status_led.c: single WS2812B-2020, data-in on PC13 via 100R.
  * Bit-banged with the DWT cycle counter at 216 MHz. BEST EFFORT:
- * PC13 is a low-drive (~2 MHz) pad, so edges are slow — timing is
+ * PC13 is a low-drive (~2 MHz) pad, so edges are slow; timing is
  * biased toward the center of the WS2812 tolerance windows and may
  * still be marginal on some LED batches.
  * Frame = 24 bits GRB MSB-first, ~34 us with IRQs masked; the
@@ -9,7 +9,7 @@
  *
  * Bench effects (led_bench_set/led_bench_stop, driven by the console
  * `led` command): a second, higher-priority pattern source for use on
- * the bench over USB — solid/blink/breathe/rainbow/strobe colors and a
+ * the bench over USB: solid/blink/breathe/rainbow/strobe colors and a
  * cycle-through-every-flight-state preview, plus a global brightness
  * scale. led_poll() force-clears any bench effect the instant `armed`
  * is true so a bench test can never mask the real ARMED indicator.
@@ -23,7 +23,7 @@
 
 static uint8_t  s_last_rgb[3];
 static bool     s_have_last;
-static uint32_t s_override_until;    /* led_poll muted until this tick —
+static uint32_t s_override_until;    /* led_poll muted until this tick:
                                         bench `led <r> <g> <b>` test window */
 static uint8_t  s_brightness_pct = 100;   /* global scale, 0-100 */
 

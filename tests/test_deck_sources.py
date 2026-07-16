@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for tools/deck/sources.py — LineIngest classification, the
+"""Unit tests for tools/deck/sources.py: LineIngest classification, the
 synthetic flight profile, ReplaySource (jsonl/csv/synthetic), reboot
 detection, malformed-line resilience, drain() incremental semantics, and
 FcConsoleSource driven by a fake serial port + fake clock (no hardware,
@@ -251,7 +251,7 @@ class TestReplaySource(unittest.TestCase):
 
 
 # ============================================================
-# FcConsoleSource — fake serial + fake clock, no hardware
+# FcConsoleSource: fake serial + fake clock, no hardware
 # ============================================================
 STATUS_REPLY = (b"status\r\n"
                 b"state:   GROUND_IDLE  t=127825ms\r\n"
@@ -353,7 +353,7 @@ def make_src(replies=REPLIES):
 
 
 class TestFcConsoleLadder(unittest.TestCase):
-    """Drive _service() synchronously — deterministic ladder behavior."""
+    """Drive _service() synchronously for deterministic ladder behavior."""
 
     def _quiesce(self, src, clock):
         """Mark every cadence timer freshly-served."""

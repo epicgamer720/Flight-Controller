@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Server tests: /data incremental semantics + peaks/tplus, /events,
 /cmd token auth, /record toggle, /replay control, static serving with
-token injection — against a real ThreadingHTTPServer on an ephemeral
+token injection, run against a real ThreadingHTTPServer on an ephemeral
 port, fed by the synthetic replay source."""
 
 import http.client

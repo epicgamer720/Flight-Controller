@@ -1,5 +1,5 @@
 /* ============================================================
- * usb_device.c — USB device stack bring-up (CDC on OTG_FS).
+ * usb_device.c: USB device stack bring-up (CDC on OTG_FS).
  * Init failure is non-fatal: the FC must fly without a console.
  * ============================================================ */
 #include "usb_device.h"

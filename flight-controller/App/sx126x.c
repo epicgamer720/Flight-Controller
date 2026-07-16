@@ -1,5 +1,5 @@
 /* ============================================================
- * sx126x.c — SX1262 LoRa driver (Wio-SX1262 module) on shared SPI1.
+ * sx126x.c: SX1262 LoRa driver (Wio-SX1262 module) on shared SPI1.
  * CLAUDE.md §3/§3.1: BUSY (PB1) wait before EVERY command; NRESET
  * pulse on init; DIO2-as-RF-switch ON (module internal switch);
  * TCXO 1.8 V via DIO3 with automatic fallback to plain XTAL config;
@@ -151,7 +151,7 @@ static bool bus_busy(void)
  * the bus is free, or deferred to main context via s_irq_pend.
  * Any failure DEFERS (s_irq_pend) instead of dropping: sx_cmd can lose
  * the bus_lock race against a main-context transaction that has locked
- * but not yet pulled CS low, and DIO1 is edge-triggered — a dropped
+ * but not yet pulled CS low, and DIO1 is edge-triggered, so a dropped
  * service here would never re-fire and the TxDone/RxDone would be lost. */
 static void radio_service(void)
 {
@@ -384,7 +384,7 @@ int radio_rx_start(uint32_t timeout_ms)
     if (sx_set_pkt_params(0xFF) < 0) return -3;   /* accept any length */
 
     /* timeout: 15.625 us steps => ms * 64. 0 = single RX, no timeout.
-     * Clamp below 0xFFFFFF (continuous mode) — never continuous here. */
+     * Clamp below 0xFFFFFF (continuous mode); never continuous here. */
     uint32_t t = (timeout_ms > 262143u) ? 0xFFFFFEu : timeout_ms * 64u;
     { uint8_t tx[4] = { OP_SET_RX, (uint8_t)(t >> 16),
                         (uint8_t)(t >> 8), (uint8_t)t };
@@ -408,7 +408,7 @@ int radio_rx_get(uint8_t *buf, uint8_t maxlen)
 
 /* Set TX power live (-9..+22 dBm for the SX1262 hi-power PA). We keep the
  * +22 PA config from init and vary only the SetTxParams power byte across the
- * whole range — the standard SX1262 approach (RadioLib does the same). Takes
+ * whole range, the standard SX1262 approach (RadioLib does the same). Takes
  * effect on the next TX (and on `radio_cw`). */
 int radio_set_tx_power(int dbm)
 {
@@ -426,7 +426,7 @@ int radio_set_tx_power(int dbm)
 int radio_get_tx_power(void) { return s_tx_dbm; }
 
 /* Unmodulated continuous carrier at the current freq/power until the next
- * SetStandby. Bench only — for supply-current / full-power verification.
+ * SetStandby. Bench only, for supply-current / full-power verification.
  * DIO2 drives the RF switch to TX automatically. Caller gates to pad+disarmed. */
 int radio_cw(bool on)
 {

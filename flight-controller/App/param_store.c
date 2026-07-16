@@ -1,9 +1,9 @@
 /* ============================================================
- * param_store.c — flash parameter persistence (sector 7).
+ * param_store.c: flash parameter persistence (sector 7).
  *
  * Append-record store in the last 128 KB flash sector @ 0x08060000
  * (F722 sectors: 0-3 16K, 4 64K, 5-7 128K). The linker script caps
- * FLASH LENGTH at 384K, so code can never overlap this sector —
+ * FLASH LENGTH at 384K, so code can never overlap this sector;
  * an oversized image fails loudly at link time instead.
  *
  * Slot layout (28 bytes, little-endian, blank flash = all 0xFF):
@@ -23,14 +23,14 @@
  * is unappendable), so the version bump migrates cleanly.
  *
  * Save = program the next blank slot (a few µs per word; the CPU
- * stalls briefly while executing from flash — acceptable on ground,
+ * stalls briefly while executing from flash, acceptable on ground,
  * and saves are hard-gated to ground states). Erase happens only
  * when all PARAM_NSLOTS slots are used: it blocks up to seconds, so the
  * IWDG is kicked before AND after (worst-case timeout ~2.8 s).
  * No cache maintenance needed: DCache is off (ICache only) and the
  * sector is data, never executed.
  *
- * WHAT MUST NEVER BE PERSISTED HERE (by design — do not "improve"):
+ * WHAT MUST NEVER BE PERSISTED HERE (by design, do not "improve"):
  *  - test_enabled: must boot OFF, always (CLAUDE.md §2). A vehicle
  *    that powers up test-fire-enabled is a safety violation.
  *  - gyro bias: recalibrated stationary on the pad each session
@@ -176,7 +176,7 @@ static int erase_sector(void)
     if (HAL_FLASH_Unlock() != HAL_OK)
         return -2;
     wdg_refresh();                      /* erase blocks up to seconds; IWDG
-                                           worst case ~2.8 s — kick both sides */
+                                           worst case ~2.8 s, kick both sides */
     HAL_StatusTypeDef st = HAL_FLASHEx_Erase(&er, &bad);
     wdg_refresh();
     (void)HAL_FLASH_Lock();
@@ -185,7 +185,7 @@ static int erase_sector(void)
 
 /* Persist main_alt_cm. Ground states ONLY (ST_INIT / ST_GROUND_IDLE /
  * ST_LANDED): programming stalls the CPU and a full-store erase can
- * block for seconds — never acceptable in ARMED or any flight state.
+ * block for seconds, never acceptable in ARMED or any flight state.
  * Returns 0 = saved; -1 = refused (in flight); -2..-5 = flash error. */
 int param_save(const params_t *p)
 {
@@ -215,7 +215,7 @@ int param_save(const params_t *p)
         int rc = prog_slot(idx, &rec);
         if (rc == 0)
             return 0;
-        /* Append failed: corrupt/disturbed tail — recycle the sector. */
+        /* Append failed: corrupt/disturbed tail, recycle the sector. */
     }
     /* Sector full (PARAM_NSLOTS saves) or unappendable: erase, write slot 0. */
     int rc = erase_sector();

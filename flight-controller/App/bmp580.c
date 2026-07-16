@@ -1,5 +1,5 @@
 /* ============================================================
- * bmp580.c — Bosch BMP580 barometer on I2C1 (polled, non-blocking)
+ * bmp580.c: Bosch BMP580 barometer on I2C1 (polled, non-blocking)
  *
  * BMP580 shares the BMP581 register map (Bosch BMP5 driver family):
  *   0x01 CHIP_ID (0x50 primary / 0x51 secondary variant)
@@ -42,7 +42,7 @@
 
 /* ISA standard sea-level temperature (15 degC). The 44330 altitude form
  * bakes this in; baro_altitude_m() rescales by T_pad/ISA_T0_K for the real
- * pad temperature. Keep it named — this path is hardware-tuning-sensitive. */
+ * pad temperature. Keep it named, since this path is hardware-tuning-sensitive. */
 #define ISA_T0_K         288.15f
 
 static uint8_t  s_addr8;        /* HAL 8-bit address (7-bit << 1), 0 = not found */
@@ -193,7 +193,7 @@ int baro_read(float *press_pa, float *temp_c)
 /* Slow ground-reference tracking, called at LED_HZ from the superloop
  * ONLY in GROUND_IDLE + disarmed: absorbs weather/thermal drift so pad
  * AGL holds ~0 without manual re-zeroing (tau ~= 1 min). The reference
- * freezes the moment the vehicle arms — flight altitudes are measured
+ * freezes the moment the vehicle arms; flight altitudes are measured
  * against the last pre-arm ground level, exactly like `zero`. */
 void baro_ground_track(void)
 {

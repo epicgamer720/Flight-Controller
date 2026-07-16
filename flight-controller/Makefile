@@ -1,5 +1,5 @@
 ##########################################################################
-# Flight Controller firmware — STM32F722RET6
+# Flight Controller firmware: STM32F722RET6
 # Based on the CubeMX-generated Makefile; sources extended for the app.
 # Build:  make -j
 # Flash:  see ../docs/PINMAP.md (USB DFU via STM32_Programmer_CLI/dfu-util)
