@@ -1,4 +1,4 @@
-# CI: host unit tests + firmware cross-build.
+#CI: host unit tests + firmware cross-build.
 # Runs on every push and pull request.
 name: CI
 
